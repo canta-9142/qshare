@@ -95,6 +95,15 @@ The basic send command is:
 qshare FILE
 ```
 
+The session lifetime may be selected explicitly:
+
+```sh
+qshare --expire DURATION FILE
+```
+
+`DURATION` uses Go duration syntax and must be greater than zero. Phase 1 uses a
+default lifetime of ten minutes.
+
 qshare must:
 
 1. validate the requested file;
@@ -322,11 +331,9 @@ A session contains at least:
 * expiration time;
 * transfer state.
 
-Sessions should have a short default lifetime.
-
-A value around ten minutes is an acceptable initial default.
-
-Lifetime must eventually be configurable.
+Sessions have a short default lifetime of ten minutes in Phase 1. The lifetime
+is configurable with `--expire DURATION`, where `DURATION` uses Go duration
+syntax and must be greater than zero.
 
 Phase 1 keeps a session available after a successful download. It does not infer
 session completion from HTTP request count or download completion. The future
@@ -474,3 +481,4 @@ Phase 1 is complete when:
 14. expiration rejects new requests while allowing in-progress transfers to finish;
 15. a selected final path component that is a symbolic link is rejected;
 16. symbolic links in ancestor directories do not by themselves prevent sharing a regular file.
+17. the session lifetime defaults to ten minutes and can be set to a positive duration with `--expire`.

@@ -10,12 +10,12 @@ Goal:
 
 Tasks:
 
-* [ ] establish Go module
-* [ ] thin CLI entrypoint
-* [ ] regular-file validation
-* [ ] reject a symlink as the selected final path component
-* [ ] ephemeral session type
-* [ ] 256-bit secure token generation
+* [x] establish Go module
+* [x] thin CLI entrypoint
+* [x] regular-file validation
+* [x] reject a symlink as the selected final path component
+* [x] ephemeral session type
+* [x] 256-bit secure token generation
 * [ ] temporary HTTP server
 * [ ] authenticated download endpoint
 * [ ] streaming transfer
@@ -23,6 +23,7 @@ Tasks:
 * [ ] terminal QR rendering
 * [ ] SIGINT/SIGTERM shutdown
 * [ ] expiration drain behavior
+* [ ] configurable session lifetime with a ten-minute default
 * [ ] session persistence across downloads and retries
 * [ ] security tests
 * [ ] basic HTTP tests
@@ -84,7 +85,6 @@ Potential features:
 * [ ] on-demand archive download
 * [ ] stdin sharing
 * [ ] explicit `--text`
-* [ ] configurable expiration
 * [ ] optional single-use sessions
 
 ## v0.5+: Additional platforms

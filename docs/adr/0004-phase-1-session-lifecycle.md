@@ -31,6 +31,9 @@ At expiration, qshare stops accepting new requests and permits requests already
 in progress to complete. Expiration is normal completion and produces exit
 status `0`.
 
+The Phase 1 lifetime defaults to ten minutes. `--expire DURATION` overrides the
+default using Go duration syntax; the value must be greater than zero.
+
 After graceful cleanup, SIGINT produces exit status `130`, SIGTERM produces exit
 status `143`, and a fatal internal error produces exit status `1`.
 
@@ -58,6 +61,5 @@ The meaning of a possible future `--once` flag is not decided by this ADR.
 This ADR does not define:
 
 * `--once` semantics;
-* configurable lifetime syntax;
 * a logical download or transfer aggregate;
 * whether later phases record download history or counts.
