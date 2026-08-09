@@ -1,0 +1,173 @@
+# CLI Contract
+
+## 1. Principles
+
+qshare is a Unix-style CLI.
+
+Its interface should compose cleanly with other command-line tools.
+
+The CLI should remain predictable before it becomes clever.
+
+## 2. Send mode
+
+```sh
+qshare FILE
+```
+
+shares a file.
+
+Later:
+
+```sh
+qshare FILE...
+```
+
+shares multiple files.
+
+## 3. Receive mode
+
+```sh
+qshare
+```
+
+with no positional arguments enters receive mode once Phase 2 is implemented.
+
+Receive mode may emit received text to stdout.
+
+This intentionally supports:
+
+```sh
+qshare | wl-copy
+```
+
+## 4. stdin
+
+Later versions may treat non-terminal stdin as input to share.
+
+Example:
+
+```sh
+cat notes.txt | qshare
+```
+
+Behavior when both positional files and piped stdin are present must be explicitly defined before stdin support is released.
+
+Do not silently invent precedence rules.
+
+## 5. stdout and stderr
+
+General rule:
+
+```text
+stdout = useful/composable program output
+stderr = interactive UI, QR code, status, progress, diagnostics
+```
+
+Examples of stderr output:
+
+* QR rendering;
+* server address;
+* transfer status;
+* progress;
+* warnings.
+
+Examples of stdout output:
+
+* text received from a phone;
+* future machine-readable output modes.
+
+This separation preserves shell composition.
+
+## 6. Exit codes
+
+Initial convention:
+
+```text
+0    success, including normal session expiration
+1    runtime, transfer, or fatal internal error
+2    invalid CLI usage
+130  terminated by SIGINT
+143  terminated by SIGTERM
+```
+
+More specific exit codes may be added only when they provide useful scripting semantics.
+
+## 7. Signals
+
+SIGINT and SIGTERM must initiate graceful shutdown.
+
+Graceful shutdown includes:
+
+* stopping the HTTP server;
+* closing active resources;
+* cleaning temporary networking state where applicable.
+
+After graceful cleanup, qshare exits with status `130` for SIGINT and `143` for
+SIGTERM. Normal session expiration exits with status `0`.
+
+In Phase 1, a completed download does not cause qshare to exit. The session
+continues until expiration, a termination signal, or a fatal error. The future
+semantics of `--once` are not yet defined.
+
+## 8. Network flags
+
+MVP:
+
+```sh
+qshare --lan FILE
+```
+
+may explicitly request LAN behavior.
+
+Once Direct Mode exists, the default strategy may become automatic.
+
+Future flags may include:
+
+```text
+--lan
+--direct
+--expire DURATION
+--once
+--text TEXT
+```
+
+Flags should not be added until their semantics are defined.
+
+In particular, `--once` is only a reserved name at this stage; no behavior should
+be inferred from it.
+
+## 9. Diagnostics
+
+Error messages should identify:
+
+* what failed;
+* the relevant resource when safe;
+* an actionable cause where possible.
+
+Avoid dumping Go internals or stack traces during ordinary failures.
+
+## 10. Examples
+
+Send:
+
+```sh
+qshare photo.jpg
+```
+
+Receive:
+
+```sh
+qshare
+```
+
+Receive text into clipboard:
+
+```sh
+qshare | wl-copy
+```
+
+Share piped text, planned:
+
+```sh
+printf 'hello\n' | qshare
+```
