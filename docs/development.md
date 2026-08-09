@@ -98,6 +98,8 @@ Avoid dependencies for functionality already straightforward in:
 * `context`;
 * `embed`.
 
+CLI parsing uses the `go-arg` library.
+
 ## 10. CGO
 
 The default build should avoid CGO.
