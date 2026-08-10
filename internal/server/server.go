@@ -10,6 +10,7 @@ import (
 type Server struct {
 	session *session.Session
 	server  *http.Server
+	now     func() time.Time
 }
 
 func New(s *session.Session) *Server {
@@ -17,6 +18,7 @@ func New(s *session.Session) *Server {
 
 	server := &Server{
 		session: s,
+		now:     time.Now,
 	}
 
 	mux.HandleFunc("GET /d/{token}", server.download)
@@ -31,7 +33,7 @@ func New(s *session.Session) *Server {
 
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, time.Now()) {
+	if err != nil || !s.session.Authorize(token, s.now()) {
 		http.NotFound(w, r)
 		return
 	}
