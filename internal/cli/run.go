@@ -42,6 +42,9 @@ func exitCodeForError(err error) int {
 	if !errors.As(err, &signalErr) {
 		return 1
 	}
+	if !containsOnlyTerminationErrors(err) {
+		return 1
+	}
 
 	switch signalErr.signal {
 	case os.Interrupt:
@@ -51,4 +54,23 @@ func exitCodeForError(err error) int {
 	default:
 		return 1
 	}
+}
+
+func containsOnlyTerminationErrors(err error) bool {
+	if err == nil {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if !containsOnlyTerminationErrors(child) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return containsOnlyTerminationErrors(wrapped.Unwrap())
+	}
+	var signalErr *terminationSignal
+	return errors.As(err, &signalErr)
 }

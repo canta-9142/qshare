@@ -25,8 +25,8 @@ Tasks:
 * [x] expiration drain behavior
 * [x] configurable session lifetime with a ten-minute default
 * [x] session persistence across downloads and retries
-* [ ] security tests
-* [ ] basic HTTP tests
+* [x] security tests
+* [x] basic HTTP tests
 * [x] embedded minimal download page
 * [ ] Linux amd64 build
 * [ ] Linux arm64 build

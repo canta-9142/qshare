@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestOpenRegularFile(t *testing.T) {
@@ -70,6 +72,32 @@ func TestFileReadersHaveIndependentOffsets(t *testing.T) {
 	}
 }
 
+func TestOpenPinsSelectedFileAfterPathReplacement(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shared.txt")
+	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = file.Close() })
+	if err := os.Rename(path, filepath.Join(dir, "old.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(file.Reader())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original" {
+		t.Fatalf("Reader() = %q, want original file", got)
+	}
+}
+
 func TestOpenRejectsUnsupportedPaths(t *testing.T) {
 	dir := t.TempDir()
 	regularPath := filepath.Join(dir, "regular.txt")
@@ -80,6 +108,10 @@ func TestOpenRejectsUnsupportedPaths(t *testing.T) {
 	if err := os.Symlink(regularPath, symlinkPath); err != nil {
 		t.Fatalf("Symlink() error = %v", err)
 	}
+	fifoPath := filepath.Join(dir, "pipe")
+	if err := unix.Mkfifo(fifoPath, 0o600); err != nil {
+		t.Fatalf("Mkfifo() error = %v", err)
+	}
 
 	tests := []struct {
 		name string
@@ -88,6 +120,7 @@ func TestOpenRejectsUnsupportedPaths(t *testing.T) {
 		{name: "missing", path: filepath.Join(dir, "missing.txt")},
 		{name: "directory", path: dir},
 		{name: "final symlink", path: symlinkPath},
+		{name: "FIFO", path: fifoPath},
 	}
 
 	for _, tt := range tests {

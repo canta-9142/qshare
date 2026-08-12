@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"time"
 
@@ -26,8 +27,17 @@ type shutdownServer interface {
 	Close() error
 }
 
+type sessionServer interface {
+	shutdownServer
+	Start(string) (net.Addr, error)
+	Done() <-chan error
+}
+
 type Application struct {
-	stderr io.Writer
+	stderr           io.Writer
+	advertiseAddress func() (netip.Addr, error)
+	newServer        func(*session.Session) sessionServer
+	renderQR         func(io.Writer, string) error
 }
 
 type Dependencies struct {
@@ -36,7 +46,10 @@ type Dependencies struct {
 
 func New(deps Dependencies) *Application {
 	return &Application{
-		stderr: deps.Stderr,
+		stderr:           deps.Stderr,
+		advertiseAddress: network.AdvertiseAddress,
+		newServer:        func(s *session.Session) sessionServer { return server.New(s) },
+		renderQR:         qr.Render,
 	}
 }
 
@@ -56,7 +69,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	}()
 
 	// determine advertise address
-	advertiseAddr, err := network.AdvertiseAddress()
+	advertiseAddr, err := a.advertiseAddress()
 	if err != nil {
 		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
@@ -68,7 +81,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	}
 
 	// start server
-	srv := server.New(sess)
+	srv := a.newServer(sess)
 	bindAddr := net.JoinHostPort(advertiseAddr.String(), defaultServerPort)
 	listenAddr, err := srv.Start(bindAddr)
 	if err != nil {
@@ -95,7 +108,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	fmt.Fprintf(a.stderr, "\nQshare\n\n")
 	fmt.Fprintf(a.stderr, "Sharing  %s\n\n", resource.Name())
 
-	if err := qr.Render(a.stderr, payload); err != nil {
+	if err := a.renderQR(a.stderr, payload); err != nil {
 		return errors.Join(
 			fmt.Errorf("failed to render QR code: %w", err),
 			srv.Close(),
@@ -109,7 +122,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	return a.runSession(ctx, sess, srv)
 }
 
-func (a *Application) runSession(ctx context.Context, sess *session.Session, srv *server.Server) error {
+func (a *Application) runSession(ctx context.Context, sess *session.Session, srv sessionServer) error {
 	timer := time.NewTimer(time.Until(sess.ExpiresAt()))
 	defer timer.Stop()
 

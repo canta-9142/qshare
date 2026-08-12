@@ -5,6 +5,7 @@ package network
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -145,7 +146,10 @@ func prioritizeDefaultRouteInterfaces(ifaces []net.Interface) []net.Interface {
 		// If it cannot be read, preserve the original order.
 		return append([]net.Interface(nil), ifaces...)
 	}
+	return prioritizeInterfaces(ifaces, defaultMetrics)
+}
 
+func prioritizeInterfaces(ifaces []net.Interface, defaultMetrics map[string]int) []net.Interface {
 	sorted := append([]net.Interface(nil), ifaces...)
 
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -175,8 +179,11 @@ func readDefaultRouteMetrics() (map[string]int, error) {
 		return nil, fmt.Errorf("failed to open /proc/net/route: %w", err)
 	}
 	defer file.Close()
+	return parseDefaultRouteMetrics(file)
+}
 
-	scanner := bufio.NewScanner(file)
+func parseDefaultRouteMetrics(src io.Reader) (map[string]int, error) {
+	scanner := bufio.NewScanner(src)
 
 	// Skip header.
 	if !scanner.Scan() {
