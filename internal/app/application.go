@@ -15,6 +15,13 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
+const expirationDrainTimeout = 30 * time.Second
+
+type shutdownServer interface {
+	Shutdown(context.Context) error
+	Close() error
+}
+
 type Application struct {
 	stderr io.Writer
 }
@@ -99,7 +106,7 @@ func (a *Application) runSession(ctx context.Context, sess *session.Session, srv
 	select {
 	case <-timer.C:
 		// Expiration
-		if err := srv.Shutdown(context.Background()); err != nil {
+		if err := shutdownExpiredServer(srv, expirationDrainTimeout); err != nil {
 			return fmt.Errorf("failed to shutdown server: %w", err)
 		}
 		return nil
@@ -122,4 +129,24 @@ func (a *Application) runSession(ctx context.Context, sess *session.Session, srv
 		}
 		return nil
 	}
+}
+
+func shutdownExpiredServer(srv shutdownServer, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err := srv.Shutdown(ctx)
+	if err == nil {
+		return nil
+	}
+
+	closeErr := srv.Close()
+	if errors.Is(err, context.DeadlineExceeded) {
+		if closeErr != nil {
+			return fmt.Errorf("force close server after drain timeout: %w", closeErr)
+		}
+		return nil
+	}
+
+	return errors.Join(err, closeErr)
 }

@@ -113,7 +113,9 @@ Graceful shutdown includes:
 * cleaning temporary networking state where applicable.
 
 After graceful cleanup, qshare exits with status `130` for SIGINT and `143` for
-SIGTERM. Normal session expiration exits with status `0`.
+SIGTERM. Normal session expiration exits with status `0`, including when qshare
+must close transfers that remain after the 30-second expiration drain period.
+A cleanup failure exits with status `1`.
 
 In Phase 1, a completed download does not cause qshare to exit. The session
 continues until expiration, a termination signal, or a fatal error. The future

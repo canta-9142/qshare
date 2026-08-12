@@ -129,7 +129,9 @@ The Phase 1 session ends when:
 * a fatal internal error prevents the session from continuing safely.
 
 On expiration, qshare must stop accepting new requests and allow transfers that
-are already in progress to complete. Expiration is a successful termination.
+are already in progress up to 30 seconds to complete. After that drain period,
+qshare must close any remaining transfers. Expiration is a successful
+termination unless cleanup itself fails.
 
 The detailed lifecycle decision is recorded in
 [`docs/adr/0004-phase-1-session-lifecycle.md`](adr/0004-phase-1-session-lifecycle.md).
@@ -478,7 +480,8 @@ Phase 1 is complete when:
 11. automated tests cover token and access-control logic;
 12. `go test ./...` and `go vet ./...` pass.
 13. a successful download does not end the session;
-14. expiration rejects new requests while allowing in-progress transfers to finish;
+14. expiration rejects new requests, allows in-progress transfers up to 30 seconds
+    to finish, and then closes any transfers that remain;
 15. a selected final path component that is a symbolic link is rejected;
 16. symbolic links in ancestor directories do not by themselves prevent sharing a regular file.
 17. the session lifetime defaults to ten minutes and can be set to a positive duration with `--expire`.
