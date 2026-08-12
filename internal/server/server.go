@@ -29,6 +29,8 @@ func New(s *session.Session) *Server {
 		now:     time.Now,
 	}
 
+	mux.HandleFunc("GET /s/{token}", server.page)
+
 	mux.HandleFunc("GET /d/{token}", server.download)
 	mux.HandleFunc("HEAD /d/{token}", server.download)
 

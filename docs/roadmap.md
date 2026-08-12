@@ -27,7 +27,7 @@ Tasks:
 * [x] session persistence across downloads and retries
 * [ ] security tests
 * [ ] basic HTTP tests
-* [ ] embedded minimal download page
+* [x] embedded minimal download page
 * [ ] Linux amd64 build
 * [ ] Linux arm64 build
 

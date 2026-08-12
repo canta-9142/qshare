@@ -16,7 +16,10 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-const expirationDrainTimeout = 30 * time.Second
+const (
+	defaultServerPort      = "55544"
+	expirationDrainTimeout = 30 * time.Second
+)
 
 type shutdownServer interface {
 	Shutdown(context.Context) error
@@ -66,7 +69,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 
 	// start server
 	srv := server.New(sess)
-	bindAddr := net.JoinHostPort(advertiseAddr.String(), "0")
+	bindAddr := net.JoinHostPort(advertiseAddr.String(), defaultServerPort)
 	listenAddr, err := srv.Start(bindAddr)
 	if err != nil {
 		return fmt.Errorf("failed to start server: %w", err)
@@ -84,7 +87,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	downloadURL := url.URL{
 		Scheme: "http",
 		Host:   net.JoinHostPort(advertiseAddr.String(), port),
-		Path:   "/d/" + sess.Token().String(),
+		Path:   "/s/" + sess.Token().String(),
 	}
 
 	payload := downloadURL.String()
