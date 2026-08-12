@@ -251,9 +251,10 @@ SIGINT/SIGTERM handling belongs near the CLI/application boundary.
 Shutdown order should ensure that temporary resources are cleaned up.
 
 When a session expires, the server must stop accepting new requests while
-allowing requests already in progress to finish. SIGINT, SIGTERM, and fatal
-errors initiate shutdown through the same application-level lifecycle, although
-their final exit statuses differ as defined in `docs/cli.md`.
+allowing requests already in progress up to 30 seconds to finish. When that
+drain period ends, the server closes any remaining transfers. SIGINT, SIGTERM,
+and fatal errors initiate shutdown through the same application-level lifecycle,
+although their final exit statuses differ as defined in `docs/cli.md`.
 
 Direct Mode eventually requires cleanup of:
 

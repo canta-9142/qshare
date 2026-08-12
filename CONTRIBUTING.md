@@ -58,6 +58,10 @@ Tests are particularly important for:
 
 Platform-specific behavior may require integration tests.
 
+Detailed conventions for test packages, table-driven tests, helpers, fixtures,
+HTTP tests, and opt-in integration tests are documented in
+[`docs/development.md`](docs/development.md#14-testing-strategy).
+
 ## Dependencies
 
 New dependencies should have a clear reason.

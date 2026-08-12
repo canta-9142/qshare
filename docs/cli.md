@@ -16,6 +16,20 @@ qshare FILE
 
 shares a file.
 
+Phase 1 also supports an explicit session lifetime:
+
+```sh
+qshare --expire DURATION FILE
+```
+
+`DURATION` uses Go duration syntax, such as `30s`, `10m`, or `1h30m`, and must
+be greater than zero. The default lifetime is `10m`. An invalid duration is a
+CLI usage error and produces exit status `2`.
+
+Phase 1 listens on TCP port `55544`. If a host firewall blocks inbound LAN
+connections, the user must permit that port separately. qshare does not modify
+firewall rules in Phase 1.
+
 Later:
 
 ```sh
@@ -103,30 +117,34 @@ Graceful shutdown includes:
 * cleaning temporary networking state where applicable.
 
 After graceful cleanup, qshare exits with status `130` for SIGINT and `143` for
-SIGTERM. Normal session expiration exits with status `0`.
+SIGTERM. Normal session expiration exits with status `0`, including when qshare
+must close transfers that remain after the 30-second expiration drain period.
+A cleanup failure exits with status `1`.
 
 In Phase 1, a completed download does not cause qshare to exit. The session
 continues until expiration, a termination signal, or a fatal error. The future
 semantics of `--once` are not yet defined.
 
-## 8. Network flags
+## 8. Send options
 
-MVP:
+Phase 1 supports:
 
 ```sh
 qshare --lan FILE
+qshare --expire DURATION FILE
 ```
 
-may explicitly request LAN behavior.
+`--lan` explicitly requests LAN behavior.
+
+`--expire` sets the Phase 1 session lifetime as described in the send-mode
+contract above.
 
 Once Direct Mode exists, the default strategy may become automatic.
 
 Future flags may include:
 
 ```text
---lan
 --direct
---expire DURATION
 --once
 --text TEXT
 ```

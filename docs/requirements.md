@@ -95,6 +95,15 @@ The basic send command is:
 qshare FILE
 ```
 
+The session lifetime may be selected explicitly:
+
+```sh
+qshare --expire DURATION FILE
+```
+
+`DURATION` uses Go duration syntax and must be greater than zero. Phase 1 uses a
+default lifetime of ten minutes.
+
 qshare must:
 
 1. validate the requested file;
@@ -108,6 +117,10 @@ qshare must:
 9. stream the file instead of buffering the complete content in memory;
 10. stop cleanly when the session expires, the user interrupts the process, or a fatal error occurs.
 
+Phase 1 listens on TCP port `55544`. Automatic host-firewall configuration is
+not part of Phase 1; the user may need to permit inbound TCP traffic to that
+port on the trusted LAN.
+
 In Phase 1, a successful download does not end the session. `GET`, `HEAD`, requests
 containing a `Range` header, and retries are independent HTTP requests within the
 same session. Phase 1 does not model a "logical single download."
@@ -120,7 +133,9 @@ The Phase 1 session ends when:
 * a fatal internal error prevents the session from continuing safely.
 
 On expiration, qshare must stop accepting new requests and allow transfers that
-are already in progress to complete. Expiration is a successful termination.
+are already in progress up to 30 seconds to complete. After that drain period,
+qshare must close any remaining transfers. Expiration is a successful
+termination unless cleanup itself fails.
 
 The detailed lifecycle decision is recorded in
 [`docs/adr/0004-phase-1-session-lifecycle.md`](adr/0004-phase-1-session-lifecycle.md).
@@ -322,11 +337,9 @@ A session contains at least:
 * expiration time;
 * transfer state.
 
-Sessions should have a short default lifetime.
-
-A value around ten minutes is an acceptable initial default.
-
-Lifetime must eventually be configurable.
+Sessions have a short default lifetime of ten minutes in Phase 1. The lifetime
+is configurable with `--expire DURATION`, where `DURATION` uses Go duration
+syntax and must be greater than zero.
 
 Phase 1 keeps a session available after a successful download. It does not infer
 session completion from HTTP request count or download completion. The future
@@ -471,6 +484,8 @@ Phase 1 is complete when:
 11. automated tests cover token and access-control logic;
 12. `go test ./...` and `go vet ./...` pass.
 13. a successful download does not end the session;
-14. expiration rejects new requests while allowing in-progress transfers to finish;
+14. expiration rejects new requests, allows in-progress transfers up to 30 seconds
+    to finish, and then closes any transfers that remain;
 15. a selected final path component that is a symbolic link is rejected;
 16. symbolic links in ancestor directories do not by themselves prevent sharing a regular file.
+17. the session lifetime defaults to ten minutes and can be set to a positive duration with `--expire`.
