@@ -17,14 +17,14 @@ Tasks:
 * [x] ephemeral session type
 * [x] 256-bit secure token generation
 * [x] temporary HTTP server
-* [ ] authenticated download endpoint
-* [ ] streaming transfer
-* [ ] local-address selection
+* [x] authenticated download endpoint
+* [x] streaming transfer
+* [x] local-address selection
 * [ ] terminal QR rendering
 * [ ] SIGINT/SIGTERM shutdown
-* [ ] expiration drain behavior
-* [ ] configurable session lifetime with a ten-minute default
-* [ ] session persistence across downloads and retries
+* [x] expiration drain behavior
+* [x] configurable session lifetime with a ten-minute default
+* [x] session persistence across downloads and retries
 * [ ] security tests
 * [ ] basic HTTP tests
 * [ ] embedded minimal download page
