@@ -26,6 +26,10 @@ qshare --expire DURATION FILE
 be greater than zero. The default lifetime is `10m`. An invalid duration is a
 CLI usage error and produces exit status `2`.
 
+Phase 1 listens on TCP port `55544`. If a host firewall blocks inbound LAN
+connections, the user must permit that port separately. qshare does not modify
+firewall rules in Phase 1.
+
 Later:
 
 ```sh

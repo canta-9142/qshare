@@ -117,6 +117,10 @@ qshare must:
 9. stream the file instead of buffering the complete content in memory;
 10. stop cleanly when the session expires, the user interrupts the process, or a fatal error occurs.
 
+Phase 1 listens on TCP port `55544`. Automatic host-firewall configuration is
+not part of Phase 1; the user may need to permit inbound TCP traffic to that
+port on the trusted LAN.
+
 In Phase 1, a successful download does not end the session. `GET`, `HEAD`, requests
 containing a `Range` header, and retries are independent HTTP requests within the
 same session. Phase 1 does not model a "logical single download."

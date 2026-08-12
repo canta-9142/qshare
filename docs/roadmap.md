@@ -71,6 +71,7 @@ Tasks:
 * [ ] captive portal experiments
 * [ ] Wi-Fi QR bootstrap
 * [ ] fallback browser-access mechanism
+* [ ] temporary firewall-rule setup and teardown
 * [ ] clean teardown
 * [ ] failure recovery after partial hotspot setup
 * [ ] Linux integration tests
