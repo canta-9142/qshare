@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
+	"time"
 
+	"github.com/canta-9142/qshare/internal/platform/network"
 	"github.com/canta-9142/qshare/internal/server"
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
@@ -40,25 +44,82 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 		}
 	}()
 
+	// determine advertise address
+	advertiseAddr, err := network.AdvertiseAddress()
+	if err != nil {
+		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
+	}
+
+	// create session
 	sess, err := session.New(resource, req.Lifetime)
 	if err != nil {
 		return err
 	}
 
+	// start server
 	srv := server.New(sess)
+	bindAddr := net.JoinHostPort(advertiseAddr.String(), "0")
+	listenAddr, err := srv.Start(bindAddr)
+	if err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
 
-	// bind
 	// construct URL
+	_, port, err := net.SplitHostPort(listenAddr.String())
+	if err != nil {
+		closeErr := srv.Close()
+		return errors.Join(
+			fmt.Errorf("failed to parse listen address: %w", err),
+			closeErr,
+		)
+	}
+	downloadURL := url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(advertiseAddr.String(), port),
+		Path:   "/d/" + sess.Token().String(),
+	}
+
 	// render QR
-	// wait until expiry / ctx cancellation
-	// graceful shutdown
+	// if err := qr.Render(...
+
+	fmt.Fprintf(
+		a.stderr,
+		"Sharing %s\n%s\n",
+		resource.Name(),
+		downloadURL.String(),
+	)
 
 	return a.runSession(ctx, sess, srv)
 }
 
 func (a *Application) runSession(ctx context.Context, sess *session.Session, srv *server.Server) error {
-	// Start the server in a separate goroutine
-	// Wait for the session to expire or for the context to be canceled
-	// Gracefully shut down the server
-	return nil
+	timer := time.NewTimer(time.Until(sess.ExpiresAt()))
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		// Expiration
+		if err := srv.Shutdown(context.Background()); err != nil {
+			return fmt.Errorf("failed to shutdown server: %w", err)
+		}
+		return nil
+
+	case <-ctx.Done():
+		// SIGINT/SIGTERM
+		closeErr := srv.Close()
+		return errors.Join(
+			context.Cause(ctx),
+			closeErr,
+		)
+
+	case err := <-srv.Done():
+		// Server error
+		if closeErr := srv.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		if err != nil {
+			return fmt.Errorf("HTTP server error: %w", err)
+		}
+		return nil
+	}
 }

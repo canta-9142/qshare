@@ -16,7 +16,7 @@ Tasks:
 * [x] reject a symlink as the selected final path component
 * [x] ephemeral session type
 * [x] 256-bit secure token generation
-* [ ] temporary HTTP server
+* [x] temporary HTTP server
 * [ ] authenticated download endpoint
 * [ ] streaming transfer
 * [ ] local-address selection
