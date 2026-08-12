@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/canta-9142/qshare/internal/platform/network"
+	"github.com/canta-9142/qshare/internal/qr"
 	"github.com/canta-9142/qshare/internal/server"
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
@@ -86,15 +87,21 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 		Path:   "/d/" + sess.Token().String(),
 	}
 
-	// render QR
-	// if err := qr.Render(...
+	payload := downloadURL.String()
 
-	fmt.Fprintf(
-		a.stderr,
-		"Sharing %s\n%s\n",
-		resource.Name(),
-		downloadURL.String(),
-	)
+	fmt.Fprintf(a.stderr, "\nQshare\n\n")
+	fmt.Fprintf(a.stderr, "Sharing  %s\n\n", resource.Name())
+
+	if err := qr.Render(a.stderr, payload); err != nil {
+		return errors.Join(
+			fmt.Errorf("failed to render QR code: %w", err),
+			srv.Close(),
+		)
+	}
+
+	fmt.Fprintf(a.stderr, "\n%s\n\n", payload)
+
+	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime.String())
 
 	return a.runSession(ctx, sess, srv)
 }

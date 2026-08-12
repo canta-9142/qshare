@@ -20,7 +20,7 @@ Tasks:
 * [x] authenticated download endpoint
 * [x] streaming transfer
 * [x] local-address selection
-* [ ] terminal QR rendering
+* [x] terminal QR rendering
 * [x] SIGINT/SIGTERM shutdown
 * [x] expiration drain behavior
 * [x] configurable session lifetime with a ten-minute default
@@ -30,6 +30,8 @@ Tasks:
 * [ ] embedded minimal download page
 * [ ] Linux amd64 build
 * [ ] Linux arm64 build
+
+Terminal QR scanning has been verified on Android. Verification on iOS is still pending.
 
 Acceptance criteria are defined in `docs/requirements.md`.
 
