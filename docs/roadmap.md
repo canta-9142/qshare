@@ -28,8 +28,8 @@ Tasks:
 * [x] security tests
 * [x] basic HTTP tests
 * [x] embedded minimal download page
-* [ ] Linux amd64 build
-* [ ] Linux arm64 build
+* [x] Linux amd64 build
+* [x] Linux arm64 build
 
 Terminal QR scanning has been verified on Android. Verification on iOS is still pending.
 
