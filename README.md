@@ -12,6 +12,10 @@ qshare photo.jpg
 
 qshare starts a temporary local server and displays a QR code. Scan it with your phone and download the file in your browser.
 
+The current LAN implementation listens on TCP port `55544`. If the host uses a
+firewall, allow inbound TCP traffic to that port from the trusted local network.
+qshare does not yet change firewall rules automatically.
+
 ## Goals
 
 qshare is designed around a small set of principles:
