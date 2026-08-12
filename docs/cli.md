@@ -46,7 +46,25 @@ qshare
 
 with no positional arguments enters receive mode once Phase 2 is implemented.
 
+The receive destination may be selected with:
+
+```sh
+qshare --receive-dir DIR
+```
+
+The default is `~/Downloads/qshare`, with `~` resolved by qshare to the current
+user's home directory rather than by the shell.
+
+When an uploaded filename collides with an existing file, qshare does not
+overwrite it. It adds ` (n)` before the extension, starting at ` (1)`; for
+example, `photo.jpg` becomes `photo (1).jpg`.
+
+Each file-upload request is limited to 1 GiB (1,073,741,824 bytes).
+
 Receive mode may emit received text to stdout.
+
+Receiving a file or text does not end the session. Receive mode continues to
+accept both until the session expires or is otherwise terminated.
 
 This intentionally supports:
 

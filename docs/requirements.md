@@ -150,15 +150,39 @@ qshare
 
 qshare will eventually operate in receive mode.
 
+The receive destination may be selected explicitly:
+
+```sh
+qshare --receive-dir DIR
+```
+
+The default receive destination is `~/Downloads/qshare`. qshare resolves `~`
+to the current user's home directory; this default does not depend on shell
+tilde expansion.
+
 The browser UI must allow the remote device to submit:
 
 * files;
 * photos selected through the platform file picker;
 * text.
 
-Uploaded files must be stored only within an explicitly configured receive destination.
+Uploaded files must be stored only within the configured receive destination.
+
+If an uploaded filename already exists, qshare must preserve the existing file
+and select a new name by adding ` (n)` before the filename extension, beginning
+with ` (1)`. For example, a collision on `photo.jpg` produces `photo (1).jpg`,
+then `photo (2).jpg`. Selecting the name and creating the destination file must
+not permit concurrent uploads to overwrite one another.
+
+Each file-upload request is limited to 1 GiB (1,073,741,824 bytes). Requests
+that exceed the limit must be rejected without leaving a partially received
+file in the destination.
 
 Text received from the remote device should be capable of being emitted to stdout.
+
+A successful file or text submission does not end the receive session. qshare
+continues accepting both kinds of submission until the configured session
+lifetime expires or another normal session termination condition occurs.
 
 This enables workflows such as:
 

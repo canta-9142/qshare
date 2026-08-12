@@ -119,13 +119,17 @@ The Phase 1 decision is recorded in
 
 Receive mode must:
 
-* use a configured receive directory;
+* use a configured receive directory, defaulting to `~/Downloads/qshare`;
 * reject path separators in remote filenames;
 * prevent `..` traversal;
-* define collision behavior;
+* preserve existing files and resolve collisions by adding ` (n)` before the
+  filename extension;
+* select collision-free names and create files atomically so concurrent uploads
+  cannot overwrite one another;
 * avoid silently overwriting existing files;
-* impose reasonable request limits;
-* handle partial uploads safely.
+* limit each file-upload request to 1 GiB (1,073,741,824 bytes);
+* remove partial files when an upload fails, is interrupted, or exceeds the
+  request limit.
 
 A remote filename is display metadata, not a trusted path.
 
