@@ -21,7 +21,7 @@ Tasks:
 * [x] streaming transfer
 * [x] local-address selection
 * [ ] terminal QR rendering
-* [ ] SIGINT/SIGTERM shutdown
+* [x] SIGINT/SIGTERM shutdown
 * [x] expiration drain behavior
 * [x] configurable session lifetime with a ten-minute default
 * [x] session persistence across downloads and retries
