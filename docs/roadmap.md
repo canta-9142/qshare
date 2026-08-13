@@ -46,9 +46,9 @@ Tasks:
 * [x] `qshare` with no positional arguments
 * [ ] upload Web UI
 * [x] configurable receive directory
-* [ ] safe filename handling
-* [ ] collision policy
-* [ ] upload size limits
+* [x] safe filename handling
+* [x] collision policy
+* [x] upload size limits
 * [ ] received text endpoint
 * [ ] stdout text output
 * [ ] `qshare | wl-copy` workflow
