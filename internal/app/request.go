@@ -2,6 +2,13 @@ package app
 
 import "time"
 
+type Operation int
+
+const (
+	OperationSend Operation = iota
+	OperationReceive
+)
+
 type NetworkMode int
 
 const (
@@ -10,7 +17,9 @@ const (
 )
 
 type Request struct {
+	Operation   Operation
 	Path        string
+	ReceiveDir  string
 	NetworkMode NetworkMode
 	Lifetime    time.Duration
 }

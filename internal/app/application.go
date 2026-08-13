@@ -54,6 +54,10 @@ func New(deps Dependencies) *Application {
 }
 
 func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
+	if req.Operation == OperationReceive {
+		return errors.New("receive mode is not implemented")
+	}
+
 	resource, err := share.Open(req.Path)
 	if err != nil {
 		return err
