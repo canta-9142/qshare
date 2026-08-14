@@ -48,7 +48,7 @@ func New(deps Dependencies) *Application {
 	return &Application{
 		stderr:           deps.Stderr,
 		advertiseAddress: network.AdvertiseAddress,
-		newServer:        func(s *session.Session) sessionServer { return server.New(s) },
+		newServer:        func(s *session.Session) sessionServer { return server.NewSend(s) },
 		renderQR:         qr.Render,
 	}
 }
@@ -79,7 +79,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	}
 
 	// create session
-	sess, err := session.New(resource, req.Lifetime)
+	sess, err := session.NewSend(resource, req.Lifetime)
 	if err != nil {
 		return err
 	}
