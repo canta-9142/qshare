@@ -39,6 +39,11 @@ with the same base name are accepted and remain separate downloadable items.
 Remote URLs identify each file with an opaque resource ID that is independent
 of, and does not expose, its local path or filename.
 
+The authenticated browser page also offers an on-demand ZIP containing all
+files in CLI order. Duplicate names use `name (1).ext`, `name (2).ext`, and so
+on, selecting the first unused name. ZIP output is streamed and is not staged
+in a temporary file.
+
 qshare validates every positional file before it creates a session, starts the
 server, or prints the QR code and access information. If any file is invalid,
 the command fails without sharing the valid subset. Resources opened while

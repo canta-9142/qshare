@@ -15,7 +15,8 @@ var downloadPage = template.Must(
 )
 
 type downloadPageData struct {
-	Files []downloadFileData
+	Files      []downloadFileData
+	ArchiveURL string
 }
 
 type downloadFileData struct {
@@ -43,7 +44,7 @@ func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 
-	data := downloadPageData{}
+	data := downloadPageData{ArchiveURL: "/z/" + token.String()}
 	for _, resource := range s.session.Resources().Resources() {
 		data.Files = append(data.Files, downloadFileData{
 			Name: resource.Name(),

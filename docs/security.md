@@ -79,6 +79,10 @@ independently of the resource's local path and filename. Duplicate base names
 must not cause resources to share an ID or overwrite one another in the
 resource map.
 
+ZIP entry names are derived only from validated resource base names, never
+from a client-controlled path. They must not contain directory components.
+Duplicate entry names are made unique without dropping or overwriting files.
+
 Send mode accepts at most 100 files. The count must be checked before opening
 any selected file. qshare must then validate the complete ordered selection
 before creating a session, starting the HTTP server, or displaying access

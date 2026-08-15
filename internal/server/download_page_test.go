@@ -82,3 +82,25 @@ func TestDownloadPageEscapesFileName(t *testing.T) {
 		t.Fatalf("page did not safely escape filename: %q", body)
 	}
 }
+
+func TestDownloadPageListsDuplicateNamesInOrderWithoutLocalPaths(t *testing.T) {
+	server, sess := newMultiFileTestServer(t, []string{"same.txt", "middle.txt", "same.txt"}, []string{"one", "two", "three"})
+	response := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
+	body := response.Body.String()
+	first := strings.Index(body, "same.txt")
+	middle := strings.Index(body, "middle.txt")
+	last := strings.LastIndex(body, "same.txt")
+	if first < 0 || !(first < middle && middle < last) {
+		t.Fatalf("files are not in CLI order: %q", body)
+	}
+	for _, resource := range sess.Resources().Resources() {
+		url := "/d/" + sess.Token().String() + "/" + string(resource.ID())
+		if !strings.Contains(body, url) {
+			t.Errorf("page missing URL %q", url)
+		}
+	}
+	if strings.Contains(body, "file://") || strings.Contains(body, "../") {
+		t.Fatal("page exposes path-like local metadata")
+	}
+}

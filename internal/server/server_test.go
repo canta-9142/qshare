@@ -175,7 +175,8 @@ func TestDownloadRejectsUnauthorizedRequests(t *testing.T) {
 		path string
 	}{
 		{name: "malformed token", path: "/d/not-a-token"},
-		{name: "different token", path: "/d/" + otherToken.String()},
+		{name: "different token", path: "/d/" + otherToken.String() + "/" + string(sess.Resources().Resources()[0].ID())},
+		{name: "unknown resource", path: "/d/" + sess.Token().String() + "/unknown"},
 		{name: "unknown route", path: "/unknown"},
 	}
 
@@ -192,6 +193,17 @@ func TestDownloadRejectsUnauthorizedRequests(t *testing.T) {
 				t.Fatal("unauthorized response exposed shared content")
 			}
 		})
+	}
+}
+
+func TestDownloadRejectsAnotherSessionsResourceID(t *testing.T) {
+	server, sess := newTestServer(t, "first")
+	_, other := newNamedTestServer(t, "other.txt", "second")
+	path := "/d/" + sess.Token().String() + "/" + string(other.Resources().Resources()[0].ID())
+	response := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", response.Code)
 	}
 }
 

@@ -213,6 +213,12 @@ The browser must be able to:
 * download individual files;
 * download all files where an appropriate archive mechanism is available.
 
+Download-all is provided as an on-demand ZIP stream. qshare must not create a
+temporary archive or buffer the complete archive in memory. ZIP entries retain
+CLI order. If an entry name is already in use, qshare inserts ` (n)` before its
+extension, beginning with ` (1)` and increasing until the name is unique.
+Archive generation must stop when the HTTP request is cancelled.
+
 ## 8. Directory sharing
 
 A later version must support:
