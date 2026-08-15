@@ -15,6 +15,7 @@ import (
 
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 func TestApplicationRunExpiration(t *testing.T) {
@@ -118,8 +119,9 @@ func newTestApplication(t *testing.T) (*Application, *fakeSessionServer, *bytes.
 
 func TestApplicationRunReceiveMode(t *testing.T) {
 	stderr := &bytes.Buffer{}
+	stdout := &bytes.Buffer{}
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{Stderr: stderr})
+	application := New(Dependencies{Stdout: stdout, Stderr: stderr})
 	application.advertiseAddress = func() (netip.Addr, error) {
 		return netip.MustParseAddr("192.0.2.10"), nil
 	}
@@ -134,8 +136,15 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 		return store, nil
 	}
 	serverReceivedStore := false
-	application.newReceiveServer = func(_ *session.Session, got receiveStore) sessionServer {
+	application.newReceiveServer = func(_ *session.Session, got receiveStore, submitter textSubmitter) sessionServer {
 		serverReceivedStore = got != nil
+		text, err := share.NewText([]byte("received text"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := submitter.Submit(context.Background(), text); err != nil {
+			t.Fatalf("Submit() error = %v", err)
+		}
 		return fake
 	}
 	var qrPayload string
@@ -161,10 +170,144 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 	if !serverReceivedStore {
 		t.Fatal("receive server did not receive opened store")
 	}
+	if got := stdout.String(); got != "received text" {
+		t.Errorf("stdout = %q, want received text", got)
+	}
 	if qrPayload == "" || !strings.HasPrefix(qrPayload, "http://192.0.2.10:55544/s/") {
 		t.Errorf("QR payload = %q", qrPayload)
 	}
 	if got := stderr.String(); !strings.Contains(got, "Receiving into "+receiveDir) {
+		t.Errorf("stderr = %q", got)
+	}
+	if fake.closeCalls != 1 {
+		t.Errorf("Close() calls = %d, want 1", fake.closeCalls)
+	}
+}
+
+func TestApplicationRunReceiveModeUsesClipboardSink(t *testing.T) {
+	var clipboard bytes.Buffer
+	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
+	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
+	application.advertiseAddress = func() (netip.Addr, error) {
+		return netip.MustParseAddr("192.0.2.10"), nil
+	}
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+			return receive.Result{}, nil
+		}), nil
+	}
+	var selectedBackend string
+	application.newClipboardSink = func(backend string) (receive.TextSink, error) {
+		selectedBackend = backend
+		return receive.NewWriterTextSink(&clipboard), nil
+	}
+	application.newReceiveServer = func(_ *session.Session, _ receiveStore, submitter textSubmitter) sessionServer {
+		text, err := share.NewText([]byte("clipboard value"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := submitter.Submit(context.Background(), text); err != nil {
+			t.Fatal(err)
+		}
+		return fake
+	}
+	application.renderQR = func(io.Writer, string) error { return nil }
+
+	cause := errors.New("stop clipboard test")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	err := application.Run(ctx, Request{
+		Operation:  OperationReceive,
+		ReceiveDir: "/receive",
+		Clipboard:  "xclip",
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, cause) {
+		t.Fatalf("Run() error = %v, want cancellation cause", err)
+	}
+	if selectedBackend != "xclip" {
+		t.Errorf("selected backend = %q, want xclip", selectedBackend)
+	}
+	if got := clipboard.String(); got != "clipboard value" {
+		t.Errorf("clipboard sink = %q, want clipboard value", got)
+	}
+}
+
+func TestApplicationClipboardConfigurationFailurePreventsServerStart(t *testing.T) {
+	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+			return receive.Result{}, nil
+		}), nil
+	}
+	want := errors.New("backend not found")
+	application.newClipboardSink = func(string) (receive.TextSink, error) {
+		return nil, want
+	}
+	serverCreated := false
+	application.newReceiveServer = func(*session.Session, receiveStore, textSubmitter) sessionServer {
+		serverCreated = true
+		return nil
+	}
+
+	err := application.Run(context.Background(), Request{
+		Operation:  OperationReceive,
+		ReceiveDir: "/receive",
+		Clipboard:  "wl-copy",
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("Run() error = %v, want backend error", err)
+	}
+	if serverCreated {
+		t.Fatal("receive server was created after clipboard configuration failure")
+	}
+}
+
+func TestApplicationRunTextSendMode(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
+	application := New(Dependencies{Stderr: stderr})
+	application.advertiseAddress = func() (netip.Addr, error) {
+		return netip.MustParseAddr("192.0.2.10"), nil
+	}
+
+	text, err := share.NewText([]byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var serverText string
+	application.newTextServer = func(sess *session.Session) sessionServer {
+		got, ok := sess.Text()
+		if ok {
+			serverText = got.String()
+		}
+		return fake
+	}
+	var qrPayload string
+	application.renderQR = func(_ io.Writer, payload string) error {
+		qrPayload = payload
+		return nil
+	}
+
+	cause := errors.New("stop text test")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	err = application.Run(ctx, Request{
+		Operation: OperationSendText,
+		Text:      text,
+		Lifetime:  time.Hour,
+	})
+	if !errors.Is(err, cause) {
+		t.Fatalf("Run() error = %v, want cancellation cause", err)
+	}
+	if serverText != "hello" {
+		t.Errorf("server text = %q, want hello", serverText)
+	}
+	if qrPayload == "" || !strings.HasPrefix(qrPayload, "http://192.0.2.10:55544/s/") {
+		t.Errorf("QR payload = %q", qrPayload)
+	}
+	if got := stderr.String(); !strings.Contains(got, "Sharing text") {
 		t.Errorf("stderr = %q", got)
 	}
 	if fake.closeCalls != 1 {
@@ -179,7 +322,7 @@ func TestApplicationReceiveStoreFailurePreventsServerStart(t *testing.T) {
 		return nil, want
 	}
 	serverCreated := false
-	application.newReceiveServer = func(*session.Session, receiveStore) sessionServer {
+	application.newReceiveServer = func(*session.Session, receiveStore, textSubmitter) sessionServer {
 		serverCreated = true
 		return nil
 	}

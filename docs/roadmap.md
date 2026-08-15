@@ -52,29 +52,23 @@ Tasks:
 * [x] receive-mode security tests (completion criteria are defined in
   `docs/security.md`)
 
-## v0.3: Direct Mode
+## v0.3: Text sharing
 
 Goal:
 
-> Operate without an existing LAN.
+> Exchange text between the PC and a browser-capable device.
 
 Tasks:
 
-* [ ] platform networking interface
-* [ ] Linux hotspot implementation
-* [ ] temporary SSID and credentials
-* [ ] IP configuration
-* [ ] DHCP strategy
-* [ ] DNS strategy if needed
-* [ ] captive portal experiments
-* [ ] Wi-Fi QR bootstrap
-* [ ] fallback browser-access mechanism
-* [ ] temporary firewall-rule setup and teardown
-* [ ] clean teardown
-* [ ] failure recovery after partial hotspot setup
-* [ ] Linux integration tests
-
-Do not assume captive portal auto-opening is reliable until tested on real Android and iOS devices.
+* [x] stdin text sharing
+* [x] explicit `--text TEXT`
+* [x] browser text submission
+* [x] 1 MiB text limits
+* [x] serialized per-submission handling
+* [x] `--clipboard BACKEND`
+* [x] Linux clipboard backends (`wl-copy`, `xclip`, and `xsel`)
+* [x] automatic clipboard-backend selection
+* [x] text-sharing security tests
 
 ## v0.4: Rich sharing
 
@@ -84,25 +78,12 @@ Potential features:
 * [ ] directory browsing
 * [ ] individual downloads
 * [ ] on-demand archive download
-* [ ] stdin sharing
-* [ ] explicit `--text`
-* [ ] received text endpoint
-* [ ] per-submission text handling
-* [ ] clipboard command integration
 * [ ] optional single-use sessions
-
-Clipboard integration should keep the receive session open and update the
-clipboard for each text submission. A plain `qshare | wl-copy` pipeline does
-not provide those semantics because `wl-copy` consumes one input stream, so the
-CLI contract for per-submission command execution must be defined before this
-feature is implemented.
 
 ## v0.5+: Additional platforms
 
 * [ ] Windows LAN Mode
 * [ ] macOS LAN Mode
-* [ ] Windows Direct Mode investigation
-* [ ] macOS Direct Mode investigation
 * [ ] Homebrew distribution
 * [ ] Windows package-manager distribution
 
@@ -117,4 +98,8 @@ Unless requirements change:
 * native mobile applications;
 * persistent qshare daemon;
 * file synchronization;
-* Bluetooth transport.
+* Bluetooth transport;
+* Direct Mode, including temporary hotspot support and platform investigation.
+
+Direct Mode remains part of the long-term design, but no release is currently
+assigned to its implementation.

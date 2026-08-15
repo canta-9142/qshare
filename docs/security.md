@@ -15,6 +15,7 @@ Relevant attackers include:
 * a browser sending malformed requests;
 * an attacker that discovers the server port but not the session token;
 * a malicious uploaded filename;
+* malicious or oversized submitted text;
 * a malicious symlink or path structure.
 
 The initial model does not attempt to protect against a fully compromised host operating system.
@@ -198,6 +199,17 @@ Filenames and user-provided text displayed in HTML must be escaped.
 
 Never concatenate untrusted strings directly into HTML markup.
 
+Browser-submitted text must be valid UTF-8 and limited to 1 MiB (1,048,576
+bytes) per submission. The limit must be enforced before unbounded buffering or
+clipboard-process execution. Concurrent submissions must be serialized with a
+bounded queue or equivalent backpressure.
+
+Clipboard backend names are trusted local CLI configuration, not values chosen
+by the remote client. qshare must invoke only supported backends, pass submitted
+text through standard input, and never interpolate text or backend selection
+into a shell command. Environment-based executable lookup must not permit the
+remote client to influence the executable path or arguments.
+
 ## 15. Security tests
 
 At minimum, send mode must have automated tests for:
@@ -223,6 +235,11 @@ must cover:
 * collision handling that preserves existing files, including concurrent
   uploads of the same filename;
 * rejection of unsupported methods, routes, and encoded traversal paths.
+
+Before text-sharing security testing is considered complete, automated tests
+must cover invalid UTF-8, exact and oversized limits, HTML escaping, unsupported
+methods, invalid or expired tokens, concurrent submission ordering, and
+clipboard-backend failures without shell interpretation or session termination.
 
 The roadmap item for receive-mode security tests may be marked complete when
 these cases are represented by automated tests and the full test suite and

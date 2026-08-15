@@ -10,6 +10,7 @@ The implementation should remain small enough to understand as a command-line ut
 * file transfer;
 * HTTP transport;
 * QR rendering;
+* clipboard integration;
 * platform networking.
 
 qshare should avoid both extremes:
@@ -242,7 +243,22 @@ LAN discovery and Direct Mode are separate network strategies.
 
 OS-specific implementations must not leak into transfer/session packages.
 
-## 12. Cancellation and cleanup
+## 12. Received-text output and clipboard integration
+
+The application layer coordinates a serialized stream of browser text
+submissions. Without clipboard integration, it writes each value unchanged to
+stdout in submission order. Interactive and diagnostic output remain on
+stderr, so the stdout stream can be piped to another local command.
+
+Clipboard integration is a platform adapter selected by the CLI. Core text and
+session logic must not depend on `wl-copy`, `xclip`, `xsel`, or process APIs.
+
+Each browser text submission is a separate event. The application serializes
+these events in arrival order and invokes the selected backend once per event,
+passing text through standard input. The adapter must execute a known program
+directly and must not construct or invoke a shell command.
+
+## 13. Cancellation and cleanup
 
 Long-running operations must accept `context.Context`.
 
@@ -265,7 +281,7 @@ Direct Mode eventually requires cleanup of:
 
 Cleanup must be safe to call after partial initialization.
 
-## 13. Embedded Web UI
+## 14. Embedded Web UI
 
 Web assets should be bundled using Go's embedding support.
 
@@ -275,7 +291,7 @@ The Web UI should remain simple and should not introduce a heavy frontend build 
 
 Plain HTML/CSS and minimal JavaScript are preferred initially.
 
-## 14. Logging and output
+## 15. Logging and output
 
 Reusable packages return errors rather than choosing user-facing wording.
 
@@ -287,7 +303,7 @@ Application or CLI layers decide:
 
 Avoid global loggers in core packages.
 
-## 15. Testing layers
+## 16. Testing layers
 
 ### Unit tests
 
@@ -298,7 +314,10 @@ Prioritize pure behavior:
 * resource lookup;
 * path validation;
 * authorization;
-* filename sanitization.
+* filename sanitization;
+* text validation and size limits;
+* serialized text-submission handling;
+* clipboard backend selection and failure isolation.
 
 ### HTTP tests
 
@@ -315,7 +334,7 @@ Test:
 
 Direct Mode will require platform-dependent integration testing.
 
-## 16. Architectural invariants
+## 17. Architectural invariants
 
 The following should remain true:
 

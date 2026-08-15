@@ -12,7 +12,18 @@ import (
 )
 
 func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
-	result, err := parse(argv, stdout, stderr)
+	return runWithInput(argv, nil, true, stdout, stderr)
+}
+
+func RunWithStdin(argv []string, stdin *os.File, stdout io.Writer, stderr io.Writer) int {
+	return runWithInput(argv, stdin, isTerminal(stdin), stdout, stderr)
+}
+
+func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout io.Writer, stderr io.Writer) int {
+	result, err := parseWithInput(argv, stdinInput{
+		reader:   stdin,
+		terminal: stdinIsTerminal,
+	}, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "qshare: %v\n", err)
 		return 2
@@ -26,6 +37,7 @@ func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
 	defer stopSignals()
 
 	application := app.New(app.Dependencies{
+		Stdout: stdout,
 		Stderr: stderr,
 	})
 

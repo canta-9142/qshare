@@ -64,15 +64,39 @@ Each file-upload request is limited to 1 GiB (1,073,741,824 bytes).
 Receiving a file does not end the session. Receive mode continues to accept
 files until the session expires or is otherwise terminated.
 
-Receiving text from the browser and clipboard integration are deferred. The
-intended clipboard behavior is to keep qshare running and invoke a configured
-integration once for each text submission. It is not specified as
-`qshare | wl-copy`, because a plain pipeline treats the entire session as one
-input stream rather than a sequence of independently handled submissions.
+In v0.3, the browser may submit UTF-8 text in receive mode. Each submission is
+limited to 1 MiB (1,048,576 bytes). Concurrent submissions are handled one at a
+time in arrival order.
 
-## 4. stdin
+Clipboard integration may be enabled with:
 
-Later versions may treat non-terminal stdin as input to share.
+```sh
+qshare --clipboard BACKEND
+```
+
+`BACKEND` is one of `auto`, `wl-copy`, `xclip`, or `xsel`. `auto` selects the
+first executable found in `PATH`, in the order `wl-copy`, `xclip`, then `xsel`.
+If `auto` finds none of them, startup fails with exit status `1`. An explicitly
+selected backend must also be found in `PATH` when qshare starts or startup
+fails with exit status `1`.
+
+qshare uses fixed arguments for backends that need them: `xclip -selection
+clipboard` and `xsel --clipboard --input`. `wl-copy` needs no fixed arguments.
+Users cannot provide extra backend arguments in v0.3.
+
+For every received text submission, qshare starts the selected backend once and
+writes the text to its standard input. qshare invokes the executable directly,
+without a shell. A backend failure rejects that submission and is reported to
+the browser, but does not end the receive session or prevent later submissions.
+Without `--clipboard`, each received value is written unchanged to stdout in
+serialized submission order and is not copied to the system clipboard. qshare
+does not add separators between submissions; they form one ordinary byte stream
+that can be piped into another command. Status and diagnostic output remain on
+stderr.
+
+## 4. Text send mode
+
+In v0.3, non-terminal stdin is shared as UTF-8 text:
 
 Example:
 
@@ -80,7 +104,19 @@ Example:
 cat notes.txt | qshare
 ```
 
-Behavior when both positional files and piped stdin are present must be explicitly defined before stdin support is released.
+Text may instead be supplied explicitly:
+
+```sh
+qshare --text "hello"
+```
+
+Text input is limited to 1 MiB (1,048,576 bytes). Invalid UTF-8 and input over
+the limit are rejected as usage errors with exit status `2`.
+
+`--text` cannot be combined with positional files. Non-terminal stdin cannot be
+combined with positional files, `--text`, or `--clipboard`; these combinations
+are usage errors with exit status `2`. Terminal stdin with no positional files
+continues to select receive mode.
 
 Do not silently invent precedence rules.
 
@@ -103,6 +139,7 @@ Examples of stderr output:
 
 Examples of stdout output:
 
+* text received from the browser when `--clipboard` is not enabled;
 * future machine-readable output modes.
 
 This separation preserves shell composition.
@@ -140,7 +177,7 @@ In Phase 1, a completed download does not cause qshare to exit. The session
 continues until expiration, a termination signal, or a fatal error. The future
 semantics of `--once` are not yet defined.
 
-## 8. Send options
+## 8. Options
 
 Phase 1 supports:
 
@@ -154,14 +191,21 @@ qshare --expire DURATION FILE
 `--expire` sets the Phase 1 session lifetime as described in the send-mode
 contract above.
 
-Once Direct Mode exists, the default strategy may become automatic.
+Version 0.3 adds:
+
+```sh
+qshare --text TEXT
+qshare --clipboard BACKEND
+```
+
+`--text` selects text send mode. `--clipboard` selects receive mode and enables
+the per-submission clipboard behavior described in section 3.
 
 Future flags may include:
 
 ```text
 --direct
 --once
---text TEXT
 ```
 
 Flags should not be added until their semantics are defined.
@@ -193,8 +237,27 @@ Receive:
 qshare
 ```
 
-Share piped text, planned:
+Share piped text:
 
 ```sh
 printf 'hello\n' | qshare
+```
+
+Share explicit text:
+
+```sh
+qshare --text "hello"
+```
+
+Receive text and copy each submission to an automatically selected clipboard
+backend:
+
+```sh
+qshare --clipboard auto
+```
+
+Receive text as a composable stdout stream:
+
+```sh
+qshare | COMMAND
 ```

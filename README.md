@@ -42,24 +42,28 @@ Transfer
 
 qshare is currently under development.
 
-The initial MVP targets:
+Currently implemented:
 
 * Linux
-* Local LAN transfer
+* Local LAN operation
 * Single-file PC → phone transfer
+* Browser-based phone → PC file upload
 * QR-based access
 * Temporary authenticated sessions
+* Configurable session lifetime
+* Configurable receive directory
+* Safe upload naming, collision handling, and a 1 GiB request limit
 
 Later versions are planned to support:
 
-* Phone → PC transfer
-* Direct Mode using a temporary Wi-Fi hotspot
+* Text sharing and per-submission clipboard integration
 * Multiple files
 * Directories
-* stdin/stdout
-* Text sharing
 * Windows
 * macOS
+
+Direct Mode using a temporary Wi-Fi hotspot remains a long-term design goal,
+but its implementation is currently deferred.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for details.
 
@@ -84,17 +88,35 @@ destination.
 
 ### Share text
 
-Planned:
+Share UTF-8 text from stdin:
 
 ```sh
 printf 'hello\n' | qshare
 ```
 
-or:
+Or supply it explicitly:
 
 ```sh
 qshare --text "hello"
 ```
+
+In receive mode, text submitted from the browser is written unchanged to
+stdout. Submissions can therefore be piped to another command:
+
+```sh
+qshare | COMMAND
+```
+
+Clipboard integration can instead be enabled with automatic Linux backend
+selection:
+
+```sh
+qshare --clipboard auto
+```
+
+Automatic selection checks `wl-copy`, `xclip`, then `xsel`. A backend can also
+be selected explicitly with `--clipboard wl-copy`, `--clipboard xclip`, or
+`--clipboard xsel`.
 
 ## Network modes
 
@@ -112,9 +134,10 @@ No Internet connection is required.
 
 ### Direct Mode
 
-Planned.
+Deferred; no target release is currently assigned.
 
-When no suitable LAN is available, qshare will create a temporary Wi-Fi network on the computer.
+If development resumes, Direct Mode is intended to create a temporary Wi-Fi
+network on the computer when no suitable LAN is available.
 
 ```text
 Laptop
@@ -139,19 +162,21 @@ See [`docs/security.md`](docs/security.md) for the development security model an
 
 ## Installation
 
-Binary releases are the canonical distribution format.
+qshare does not yet have a stable release. Build the current development version
+from source with:
 
-Planned release artifacts include:
-
-```text
-qshare_<version>_linux_amd64.tar.gz
-qshare_<version>_linux_arm64.tar.gz
-qshare_<version>_windows_amd64.zip
-qshare_<version>_darwin_amd64.tar.gz
-qshare_<version>_darwin_arm64.tar.gz
+```sh
+go build ./cmd/qshare
 ```
 
-Additional package-manager distribution may be provided later.
+The currently configured CI build targets are:
+
+```text
+linux/amd64
+linux/arm64
+```
+
+Windows, macOS, and package-manager distribution are planned for later versions.
 
 ## Development
 
