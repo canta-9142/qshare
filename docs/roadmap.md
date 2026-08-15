@@ -44,7 +44,7 @@ Goal:
 Tasks:
 
 * [x] `qshare` with no positional arguments
-* [ ] upload Web UI
+* [x] upload Web UI
 * [x] configurable receive directory
 * [x] safe filename handling
 * [x] collision policy

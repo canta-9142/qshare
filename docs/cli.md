@@ -44,7 +44,7 @@ shares multiple files.
 qshare
 ```
 
-with no positional arguments enters receive mode once Phase 2 is implemented.
+with no positional arguments enters receive mode.
 
 The receive destination may be selected with:
 

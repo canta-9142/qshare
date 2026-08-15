@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 )
 
@@ -110,9 +111,96 @@ func newTestApplication(t *testing.T) (*Application, *fakeSessionServer, *bytes.
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
 	application := New(Dependencies{Stderr: stderr})
 	application.advertiseAddress = func() (netip.Addr, error) { return netip.MustParseAddr("192.0.2.10"), nil }
-	application.newServer = func(*session.Session) sessionServer { return fake }
+	application.newSendServer = func(*session.Session) sessionServer { return fake }
 	application.renderQR = func(dst io.Writer, payload string) error { _, err := io.WriteString(dst, "QR:"+payload); return err }
 	return application, fake, stderr, path
+}
+
+func TestApplicationRunReceiveMode(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
+	application := New(Dependencies{Stderr: stderr})
+	application.advertiseAddress = func() (netip.Addr, error) {
+		return netip.MustParseAddr("192.0.2.10"), nil
+	}
+
+	receiveDir := filepath.Join(t.TempDir(), "received")
+	var openedDir string
+	store := receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+		return receive.Result{}, nil
+	})
+	application.openReceiveStore = func(dir string) (receiveStore, error) {
+		openedDir = dir
+		return store, nil
+	}
+	serverReceivedStore := false
+	application.newReceiveServer = func(_ *session.Session, got receiveStore) sessionServer {
+		serverReceivedStore = got != nil
+		return fake
+	}
+	var qrPayload string
+	application.renderQR = func(_ io.Writer, payload string) error {
+		qrPayload = payload
+		return nil
+	}
+
+	cause := errors.New("stop receive test")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	err := application.Run(ctx, Request{
+		Operation:  OperationReceive,
+		ReceiveDir: receiveDir,
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, cause) {
+		t.Fatalf("Run() error = %v, want cancellation cause", err)
+	}
+	if openedDir != receiveDir {
+		t.Errorf("opened receive directory = %q, want %q", openedDir, receiveDir)
+	}
+	if !serverReceivedStore {
+		t.Fatal("receive server did not receive opened store")
+	}
+	if qrPayload == "" || !strings.HasPrefix(qrPayload, "http://192.0.2.10:55544/s/") {
+		t.Errorf("QR payload = %q", qrPayload)
+	}
+	if got := stderr.String(); !strings.Contains(got, "Receiving into "+receiveDir) {
+		t.Errorf("stderr = %q", got)
+	}
+	if fake.closeCalls != 1 {
+		t.Errorf("Close() calls = %d, want 1", fake.closeCalls)
+	}
+}
+
+func TestApplicationReceiveStoreFailurePreventsServerStart(t *testing.T) {
+	application := New(Dependencies{Stderr: io.Discard})
+	want := errors.New("store failed")
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		return nil, want
+	}
+	serverCreated := false
+	application.newReceiveServer = func(*session.Session, receiveStore) sessionServer {
+		serverCreated = true
+		return nil
+	}
+
+	err := application.Run(context.Background(), Request{
+		Operation:  OperationReceive,
+		ReceiveDir: "/receive",
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("Run() error = %v, want store error", err)
+	}
+	if serverCreated {
+		t.Fatal("receive server was created after store failure")
+	}
+}
+
+type receiveStoreFunc func(context.Context, string, io.Reader) (receive.Result, error)
+
+func (function receiveStoreFunc) Save(ctx context.Context, name string, source io.Reader) (receive.Result, error) {
+	return function(ctx, name, source)
 }
 
 type testAddr string

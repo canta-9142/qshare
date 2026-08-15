@@ -148,7 +148,7 @@ When started without file arguments:
 qshare
 ```
 
-qshare will eventually operate in receive mode.
+qshare operates in receive mode.
 
 The receive destination may be selected explicitly:
 

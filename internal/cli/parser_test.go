@@ -142,12 +142,6 @@ func TestRunMapsErrorsToExitCodes(t *testing.T) {
 		wantDiagnostic string
 	}{
 		{
-			name:           "receive mode not implemented",
-			argv:           nil,
-			wantCode:       1,
-			wantDiagnostic: "receive mode is not implemented",
-		},
-		{
 			name:           "runtime error",
 			argv:           []string{"missing-file"},
 			wantCode:       1,

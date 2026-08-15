@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,32 @@ func TestUploadRejectsInvalidMultipartRequest(t *testing.T) {
 	}
 }
 
+func TestUploadRejectsFilenameWithPathSeparator(t *testing.T) {
+	var receivedNames []string
+	store := uploadStoreFunc(func(_ context.Context, name string, _ io.Reader) (receive.Result, error) {
+		receivedNames = append(receivedNames, name)
+		return receive.Result{}, receive.ErrInvalidFilename
+	})
+	server, sess := newReceiveTestServer(t, store)
+
+	for _, filename := range []string{"../secret.txt", `..\secret.txt`} {
+		t.Run(filename, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			server.server.Handler.ServeHTTP(
+				response,
+				newUploadRequest(t, "/u/"+sess.Token().String(), filename, "secret"),
+			)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+			}
+		})
+	}
+	wantNames := []string{"../secret.txt", `..\secret.txt`}
+	if !slices.Equal(receivedNames, wantNames) {
+		t.Errorf("Save() filenames = %q, want %q", receivedNames, wantNames)
+	}
+}
+
 func TestUploadMapsStoreErrors(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -152,7 +179,6 @@ func TestReceiveServerRejectsUnsupportedRoutes(t *testing.T) {
 	}))
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/u/"+sess.Token().String(), nil),
-		httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil),
 		httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String(), nil),
 	} {
 		response := httptest.NewRecorder()

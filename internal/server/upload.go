@@ -3,6 +3,9 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/canta-9142/qshare/internal/receive"
@@ -32,26 +35,33 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		receive.MaxFileSize+multipartOverhead,
 	)
 
-	file, header, err := r.FormFile("file")
+	multipartReader, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, "invalid upload", http.StatusBadRequest)
+		return
+	}
+
+	file, err := nextUploadFile(multipartReader)
 	if err != nil {
 		var maxBytesError *http.MaxBytesError
-
 		if errors.As(err, &maxBytesError) {
 			http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-
 		http.Error(w, "invalid upload", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
+
+	filename, err := rawFilename(file.Header.Get("Content-Disposition"))
+	if err != nil {
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
 	}
 
 	result, err := s.uploadStore.Save(
 		r.Context(),
-		header.Filename,
+		filename,
 		file,
 	)
 	if err != nil {
@@ -80,4 +90,31 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		Name: result.Name,
 		Size: result.Size,
 	})
+}
+
+func nextUploadFile(reader *multipart.Reader) (*multipart.Part, error) {
+	for {
+		part, err := reader.NextPart()
+		if err != nil {
+			return nil, err
+		}
+		if part.FormName() == "file" && part.FileName() != "" {
+			return part, nil
+		}
+		if _, err := io.Copy(io.Discard, part); err != nil {
+			_ = part.Close()
+			return nil, err
+		}
+		if err := part.Close(); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func rawFilename(contentDisposition string) (string, error) {
+	mediaType, parameters, err := mime.ParseMediaType(contentDisposition)
+	if err != nil || mediaType != "form-data" || parameters["filename"] == "" {
+		return "", receive.ErrInvalidFilename
+	}
+	return parameters["filename"], nil
 }

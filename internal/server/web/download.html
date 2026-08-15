@@ -8,78 +8,77 @@
 
   <style>
     :root {
-      font-family:
-        system-ui, -apple-system, BlinkMacSystemFont,
-        "Segoe UI", sans-serif;
+      font-family: system-ui, sans-serif;
       color-scheme: light dark;
     }
 
     body {
-      min-height: 100vh;
       margin: 0;
-      display: grid;
-      place-items: center;
-      background: #f4f5f7;
-      color: #202124;
+      background: #fff;
+      color: #111;
     }
 
     main {
-      box-sizing: border-box;
-      width: min(92vw, 420px);
-      padding: 32px 24px;
-      border-radius: 20px;
-      background: white;
-      box-shadow: 0 12px 40px rgb(0 0 0 / 10%);
-      text-align: center;
+      width: min(100% - 32px, 560px);
+      margin: 64px auto;
     }
 
-    .brand {
+    h1 {
+      margin: 0 0 40px;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .file {
+      border-top: 1px solid currentColor;
+      padding-top: 24px;
+    }
+
+    .file-name,
+    .file-size {
       margin: 0;
-      overflow-wrap: anywhere;
-      font-size: 1.2rem;
     }
 
     .file-name {
-      margin: 0;
       overflow-wrap: anywhere;
-      font-size: 1.25rem;
+      font-size: 1.125rem;
+      font-weight: 600;
     }
 
     .file-size {
-      margin: 8px 0 28px;
-      color: #6b7280;
+      margin-top: 8px;
     }
 
     .download {
+      box-sizing: border-box;
       display: block;
-      padding: 14px 20px;
-      border-radius: 12px;
-      background: #2563eb;
-      color: white;
-      font-weight: 700;
+      width: 100%;
+      margin-top: 24px;
+      padding: 12px;
+      border: 1px solid currentColor;
+      border-radius: 0;
+      background: #111;
+      color: #fff;
+      font-weight: 600;
+      text-align: center;
       text-decoration: none;
     }
 
     .notice {
       margin: 24px 0 0;
-      color: #6b7280;
       font-size: 0.875rem;
       line-height: 1.5;
     }
 
     @media (prefers-color-scheme: dark) {
       body {
-        background: #111827;
-        color: #f9fafb;
+        background: #111;
+        color: #eee;
       }
 
-      main {
-        background: #1f2937;
-      }
-
-      .file-size,
-      .notice {
-        color: #9ca3af;
+      .download {
+        background: #eee;
+        color: #111;
       }
     }
   </style>
@@ -87,12 +86,14 @@
 
 <body>
   <main>
-    <p class="brand">Qshare</p>
+    <h1>Download a file</h1>
 
-    <p class="file-name">{{.FileName}}</p>
-    <p class="file-size">{{.FileSize}}</p>
-    
-    <a href="{{.DownloadURL}}" class="download">Download</a>
-    <p class="notice">This file is being shared temporarily.</p>
+    <section class="file">
+      <p class="file-name">{{.FileName}}</p>
+      <p class="file-size">{{.FileSize}}</p>
+      <a href="{{.DownloadURL}}" class="download">Download</a>
+      <p class="notice">This file is available temporarily.</p>
+    </section>
   </main>
 </body>
+</html>
