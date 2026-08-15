@@ -42,20 +42,23 @@ Transfer
 
 qshare is currently under development.
 
-The initial MVP targets:
+Currently implemented:
 
 * Linux
-* Local LAN transfer
+* Local LAN operation
 * Single-file PC → phone transfer
+* Browser-based phone → PC file upload
 * QR-based access
 * Temporary authenticated sessions
+* Configurable session lifetime
+* Configurable receive directory
+* Safe upload naming, collision handling, and a 1 GiB request limit
 
 Later versions are planned to support:
 
+* Text sharing and per-submission clipboard integration
 * Multiple files
 * Directories
-* stdin/stdout
-* Text sharing
 * Windows
 * macOS
 
@@ -85,7 +88,7 @@ destination.
 
 ### Share text
 
-Planned:
+Planned for v0.3; these commands are not implemented yet:
 
 ```sh
 printf 'hello\n' | qshare
@@ -97,9 +100,9 @@ or:
 qshare --text "hello"
 ```
 
-Version 0.3 is planned to accept text from the browser as well. On Linux, each
-received submission may be copied to the system clipboard with a supported
-backend:
+Version 0.3 is also planned to accept text from the browser. On Linux, each
+received submission will be copyable to the system clipboard with a supported
+backend while qshare remains running:
 
 ```sh
 qshare --clipboard auto
@@ -149,19 +152,21 @@ See [`docs/security.md`](docs/security.md) for the development security model an
 
 ## Installation
 
-Binary releases are the canonical distribution format.
+qshare does not yet have a stable release. Build the current development version
+from source with:
 
-Planned release artifacts include:
-
-```text
-qshare_<version>_linux_amd64.tar.gz
-qshare_<version>_linux_arm64.tar.gz
-qshare_<version>_windows_amd64.zip
-qshare_<version>_darwin_amd64.tar.gz
-qshare_<version>_darwin_arm64.tar.gz
+```sh
+go build ./cmd/qshare
 ```
 
-Additional package-manager distribution may be provided later.
+The currently configured CI build targets are:
+
+```text
+linux/amd64
+linux/arm64
+```
+
+Windows, macOS, and package-manager distribution are planned for later versions.
 
 ## Development
 
