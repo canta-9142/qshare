@@ -249,11 +249,11 @@ Share explicit text:
 qshare --text "hello"
 ```
 
-Receive text and copy each submission to an explicitly selected clipboard
+Receive text and copy each submission to an automatically selected clipboard
 backend:
 
 ```sh
-qshare --clipboard wl-copy
+qshare --clipboard auto
 ```
 
 Receive text as a composable stdout stream:

@@ -109,12 +109,12 @@ func TestTextProcessorAppliesBoundedBackpressure(t *testing.T) {
 func TestWriterTextSinkPreservesBytesWithoutSeparators(t *testing.T) {
 	var destination bytes.Buffer
 	sink := NewWriterTextSink(&destination)
-	for _, value := range []string{"first\n", "第二"} {
+	for _, value := range []string{"first\x00\r\n", "第二"} {
 		if err := sink.WriteText(context.Background(), textForTest(t, value)); err != nil {
 			t.Fatalf("WriteText() error = %v", err)
 		}
 	}
-	if got, want := destination.String(), "first\n第二"; got != want {
+	if got, want := destination.String(), "first\x00\r\n第二"; got != want {
 		t.Fatalf("destination = %q, want %q", got, want)
 	}
 }

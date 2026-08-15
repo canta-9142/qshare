@@ -107,15 +107,16 @@ stdout. Submissions can therefore be piped to another command:
 qshare | COMMAND
 ```
 
-Clipboard integration can instead be enabled with an explicitly selected
-Linux backend:
+Clipboard integration can instead be enabled with automatic Linux backend
+selection:
 
 ```sh
-qshare --clipboard wl-copy
+qshare --clipboard auto
 ```
 
-The supported explicit backends are `wl-copy`, `xclip`, and `xsel`. Automatic
-backend selection is planned for v0.3.
+Automatic selection checks `wl-copy`, `xclip`, then `xsel`. A backend can also
+be selected explicitly with `--clipboard wl-copy`, `--clipboard xclip`, or
+`--clipboard xsel`.
 
 ## Network modes
 

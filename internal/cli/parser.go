@@ -135,9 +135,7 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 			return parseResult{}, errors.New("--clipboard cannot be combined with a file")
 		}
 		switch *args.Clipboard {
-		case "wl-copy", "xclip", "xsel":
-		case "auto":
-			return parseResult{}, errors.New("--clipboard auto is not available yet")
+		case "auto", "wl-copy", "xclip", "xsel":
 		default:
 			return parseResult{}, fmt.Errorf("unsupported clipboard backend: %q", *args.Clipboard)
 		}

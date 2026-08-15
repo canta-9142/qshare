@@ -67,8 +67,8 @@ Tasks:
 * [x] serialized per-submission handling
 * [x] `--clipboard BACKEND`
 * [x] Linux clipboard backends (`wl-copy`, `xclip`, and `xsel`)
-* [ ] automatic clipboard-backend selection
-* [ ] text-sharing security tests
+* [x] automatic clipboard-backend selection
+* [x] text-sharing security tests
 
 ## v0.4: Rich sharing
 
