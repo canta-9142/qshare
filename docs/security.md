@@ -200,12 +200,30 @@ Never concatenate untrusted strings directly into HTML markup.
 
 ## 15. Security tests
 
-At minimum add automated tests for:
+At minimum, send mode must have automated tests for:
 
 * invalid token rejection;
 * token separation between sessions;
 * unknown resource rejection;
 * traversal attempts;
 * encoded traversal attempts;
-* malicious upload filenames;
 * expiration.
+
+Before receive-mode security testing is considered complete, automated tests
+must cover:
+
+* invalid, cross-session, and expired-token rejection without invoking storage;
+* malicious upload filenames, including POSIX and Windows path separators,
+  traversal components, empty names, and NUL bytes;
+* request and file-size limits at their boundaries, including multipart
+  overhead;
+* malformed multipart bodies, missing file parts, and invalid
+  `Content-Disposition` values;
+* interrupted and cancelled uploads, with no partial file left behind;
+* collision handling that preserves existing files, including concurrent
+  uploads of the same filename;
+* rejection of unsupported methods, routes, and encoded traversal paths.
+
+The roadmap item for receive-mode security tests may be marked complete when
+these cases are represented by automated tests and the full test suite and
+static analysis pass.

@@ -49,7 +49,8 @@ Tasks:
 * [x] safe filename handling
 * [x] collision policy
 * [x] upload size limits
-* [ ] receive-mode security tests
+* [x] receive-mode security tests (completion criteria are defined in
+  `docs/security.md`)
 
 ## v0.3: Direct Mode
 

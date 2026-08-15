@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -123,6 +124,115 @@ func TestUploadRejectsInvalidMultipartRequest(t *testing.T) {
 	}
 }
 
+func TestUploadRejectsMultipartWithoutFile(t *testing.T) {
+	server, sess := newReceiveTestServer(t, uploadStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+		t.Fatal("Save() called for request without a file")
+		return receive.Result{}, nil
+	}))
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("note", "not a file"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/u/"+sess.Token().String(), &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+}
+
+func TestRawFilenameRejectsInvalidContentDisposition(t *testing.T) {
+	for _, value := range []string{
+		"",
+		"attachment; filename=file.txt",
+		"form-data",
+		`form-data; filename=""`,
+		`form-data; filename="unterminated`,
+	} {
+		t.Run(value, func(t *testing.T) {
+			if _, err := rawFilename(value); !errors.Is(err, receive.ErrInvalidFilename) {
+				t.Fatalf("rawFilename() error = %v, want ErrInvalidFilename", err)
+			}
+		})
+	}
+}
+
+func TestUploadRejectsRequestOverLimitAndRemovesPartialFile(t *testing.T) {
+	dir := t.TempDir()
+	store, err := receive.OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, sess := newReceiveTestServer(t, store)
+	request := newUploadRequest(t, "/u/"+sess.Token().String(), "large.bin", strings.Repeat("x", 256))
+	server.maxUploadRequestSize = request.ContentLength - 64
+
+	response := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d; body = %q", response.Code, http.StatusRequestEntityTooLarge, response.Body.String())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("receive directory contains %v, want empty", entries)
+	}
+}
+
+func TestUploadAcceptsRequestAtLimit(t *testing.T) {
+	store := uploadStoreFunc(func(_ context.Context, name string, source io.Reader) (receive.Result, error) {
+		content, err := io.ReadAll(source)
+		return receive.Result{Name: name, Size: int64(len(content))}, err
+	})
+	server, sess := newReceiveTestServer(t, store)
+	request := newUploadRequest(t, "/u/"+sess.Token().String(), "limit.bin", "content")
+	server.maxUploadRequestSize = request.ContentLength
+
+	response := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %q", response.Code, http.StatusCreated, response.Body.String())
+	}
+}
+
+func TestUploadCancellationRemovesPartialFile(t *testing.T) {
+	dir := t.TempDir()
+	store, err := receive.OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, sess := newReceiveTestServer(t, store)
+	request := newUploadRequest(t, "/u/"+sess.Token().String(), "cancelled.txt", "content")
+	ctx, cancel := context.WithCancel(request.Context())
+	cancel()
+	request = request.WithContext(ctx)
+
+	response := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("receive directory contains %v, want empty", entries)
+	}
+}
+
 func TestUploadRejectsFilenameWithPathSeparator(t *testing.T) {
 	var receivedNames []string
 	store := uploadStoreFunc(func(_ context.Context, name string, _ io.Reader) (receive.Result, error) {
@@ -174,18 +284,25 @@ func TestUploadMapsStoreErrors(t *testing.T) {
 }
 
 func TestReceiveServerRejectsUnsupportedRoutes(t *testing.T) {
+	calls := 0
 	server, sess := newReceiveTestServer(t, uploadStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+		calls++
 		return receive.Result{}, nil
 	}))
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/u/"+sess.Token().String(), nil),
 		httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String(), nil),
+		httptest.NewRequest(http.MethodPost, "/u/%2e%2e%2f"+sess.Token().String(), nil),
+		httptest.NewRequest(http.MethodPost, "/u/%2e%2e/"+sess.Token().String(), nil),
 	} {
 		response := httptest.NewRecorder()
 		server.server.Handler.ServeHTTP(response, request)
 		if response.Code != http.StatusMethodNotAllowed && response.Code != http.StatusNotFound {
 			t.Errorf("%s %s: status = %d, want 404 or 405", request.Method, request.URL.Path, response.Code)
 		}
+	}
+	if calls != 0 {
+		t.Errorf("Save() calls = %d, want 0", calls)
 	}
 }
 

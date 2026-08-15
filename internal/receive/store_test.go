@@ -119,6 +119,19 @@ func TestSaveRejectsFileOverLimit(t *testing.T) {
 	assertDirectoryEmpty(t, store.dir)
 }
 
+func TestSaveAcceptsFileAtLimit(t *testing.T) {
+	store := newTestStore(t)
+	store.maxFileSize = 8
+	result, err := store.Save(context.Background(), "limit.bin", strings.NewReader("12345678"))
+	if err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if result.Size != store.maxFileSize {
+		t.Errorf("Save() size = %d, want %d", result.Size, store.maxFileSize)
+	}
+	assertFileContent(t, filepath.Join(store.dir, result.Name), "12345678")
+}
+
 func TestSaveRemovesPartialFileAfterReadError(t *testing.T) {
 	store := newTestStore(t)
 	_, err := store.Save(context.Background(), "broken.txt", io.MultiReader(

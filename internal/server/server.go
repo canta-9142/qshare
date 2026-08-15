@@ -18,13 +18,14 @@ type uploadStore interface {
 }
 
 type Server struct {
-	session     *session.Session
-	uploadStore uploadStore
-	server      *http.Server
-	mux         *http.ServeMux
-	listener    net.Listener
-	done        chan error
-	now         func() time.Time
+	session              *session.Session
+	uploadStore          uploadStore
+	maxUploadRequestSize int64
+	server               *http.Server
+	mux                  *http.ServeMux
+	listener             net.Listener
+	done                 chan error
+	now                  func() time.Time
 }
 
 func NewSend(sess *session.Session) *Server {
@@ -43,6 +44,7 @@ func NewReceive(sess *session.Session, store uploadStore) *Server {
 	server.mux.HandleFunc("GET /s/{token}", server.uploadPage)
 	server.mux.HandleFunc("POST /u/{token}", server.upload)
 	server.uploadStore = store
+	server.maxUploadRequestSize = receive.MaxFileSize + multipartOverhead
 
 	return server
 }

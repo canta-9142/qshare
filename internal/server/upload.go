@@ -32,7 +32,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(
 		w,
 		r.Body,
-		receive.MaxFileSize+multipartOverhead,
+		s.maxUploadRequestSize,
 	)
 
 	multipartReader, err := r.MultipartReader()
@@ -65,11 +65,12 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		file,
 	)
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
 		switch {
 		case errors.Is(err, receive.ErrInvalidFilename):
 			http.Error(w, "invalid filename", http.StatusBadRequest)
 
-		case errors.Is(err, receive.ErrFileTooLarge):
+		case errors.Is(err, receive.ErrFileTooLarge), errors.As(err, &maxBytesError):
 			http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
 
 		default:
