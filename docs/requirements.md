@@ -160,11 +160,10 @@ The default receive destination is `~/Downloads/qshare`. qshare resolves `~`
 to the current user's home directory; this default does not depend on shell
 tilde expansion.
 
-The browser UI must allow the remote device to submit:
+In Phase 2, the browser UI must allow the remote device to submit:
 
 * files;
-* photos selected through the platform file picker;
-* text.
+* photos selected through the platform file picker.
 
 Uploaded files must be stored only within the configured receive destination.
 
@@ -178,17 +177,9 @@ Each file-upload request is limited to 1 GiB (1,073,741,824 bytes). Requests
 that exceed the limit must be rejected without leaving a partially received
 file in the destination.
 
-Text received from the remote device should be capable of being emitted to stdout.
-
-A successful file or text submission does not end the receive session. qshare
-continues accepting both kinds of submission until the configured session
-lifetime expires or another normal session termination condition occurs.
-
-This enables workflows such as:
-
-```sh
-qshare | wl-copy
-```
+A successful file submission does not end the receive session. qshare continues
+accepting files until the configured session lifetime expires or another normal
+session termination condition occurs.
 
 ## 7. Multiple files
 
@@ -231,6 +222,17 @@ qshare --text "hello"
 ```
 
 stdin behavior must follow the CLI contract in `docs/cli.md`.
+
+A later version may also accept text submitted from the remote browser. The
+intended clipboard workflow keeps qshare running and handles each submission as
+a separate event, allowing each newly received value to replace the clipboard
+contents. A plain `qshare | wl-copy` pipeline does not satisfy this requirement
+because it represents the whole session as one input stream.
+
+The command interface, text size limit, concurrent-submission behavior, and
+failure policy for clipboard integration must be defined before release. qshare
+should not require a particular desktop clipboard implementation in its core
+packages.
 
 ## 10. Network modes
 
@@ -465,9 +467,7 @@ qshare
 Add:
 
 * browser upload;
-* safe receive directory;
-* text submission;
-* stdout text output.
+* safe receive directory.
 
 ### Phase 3: Direct Mode
 
@@ -488,6 +488,8 @@ Add progressively:
 * archive download;
 * stdin;
 * explicit text sharing;
+* browser text submission;
+* per-submission clipboard command integration;
 * Windows;
 * macOS.
 

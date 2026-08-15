@@ -61,16 +61,14 @@ example, `photo.jpg` becomes `photo (1).jpg`.
 
 Each file-upload request is limited to 1 GiB (1,073,741,824 bytes).
 
-Receive mode may emit received text to stdout.
+Receiving a file does not end the session. Receive mode continues to accept
+files until the session expires or is otherwise terminated.
 
-Receiving a file or text does not end the session. Receive mode continues to
-accept both until the session expires or is otherwise terminated.
-
-This intentionally supports:
-
-```sh
-qshare | wl-copy
-```
+Receiving text from the browser and clipboard integration are deferred. The
+intended clipboard behavior is to keep qshare running and invoke a configured
+integration once for each text submission. It is not specified as
+`qshare | wl-copy`, because a plain pipeline treats the entire session as one
+input stream rather than a sequence of independently handled submissions.
 
 ## 4. stdin
 
@@ -105,7 +103,6 @@ Examples of stderr output:
 
 Examples of stdout output:
 
-* text received from a phone;
 * future machine-readable output modes.
 
 This separation preserves shell composition.
@@ -194,12 +191,6 @@ Receive:
 
 ```sh
 qshare
-```
-
-Receive text into clipboard:
-
-```sh
-qshare | wl-copy
 ```
 
 Share piped text, planned:
