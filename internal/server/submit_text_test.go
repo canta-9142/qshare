@@ -120,6 +120,31 @@ func TestSubmitTextRejectsUnauthorizedAndExpiredRequests(t *testing.T) {
 	}
 }
 
+func TestSubmitTextRejectsTokenFromAnotherSession(t *testing.T) {
+	calls := 0
+	first, _ := newTextReceiveTestServer(t, textSubmitterFunc(func(context.Context, share.Text) error {
+		calls++
+		return nil
+	}))
+	_, secondSession := newTextReceiveTestServer(t, textSubmitterFunc(nil))
+
+	response := httptest.NewRecorder()
+	first.server.Handler.ServeHTTP(
+		response,
+		httptest.NewRequest(
+			http.MethodPost,
+			"/t/"+secondSession.Token().String(),
+			strings.NewReader("secret"),
+		),
+	)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+	if calls != 0 {
+		t.Fatalf("Submit() calls = %d, want 0", calls)
+	}
+}
+
 func TestSubmitTextReportsFailureAndAcceptsLaterSubmission(t *testing.T) {
 	want := errors.New("sink failed")
 	calls := 0

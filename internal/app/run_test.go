@@ -233,6 +233,37 @@ func TestApplicationRunReceiveModeUsesClipboardSink(t *testing.T) {
 	}
 }
 
+func TestApplicationClipboardConfigurationFailurePreventsServerStart(t *testing.T) {
+	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+			return receive.Result{}, nil
+		}), nil
+	}
+	want := errors.New("backend not found")
+	application.newClipboardSink = func(string) (receive.TextSink, error) {
+		return nil, want
+	}
+	serverCreated := false
+	application.newReceiveServer = func(*session.Session, receiveStore, textSubmitter) sessionServer {
+		serverCreated = true
+		return nil
+	}
+
+	err := application.Run(context.Background(), Request{
+		Operation:  OperationReceive,
+		ReceiveDir: "/receive",
+		Clipboard:  "wl-copy",
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("Run() error = %v, want backend error", err)
+	}
+	if serverCreated {
+		t.Fatal("receive server was created after clipboard configuration failure")
+	}
+}
+
 func TestApplicationRunTextSendMode(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}

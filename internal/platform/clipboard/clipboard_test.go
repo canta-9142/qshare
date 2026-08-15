@@ -80,10 +80,75 @@ func TestSinkReportsBackendFailure(t *testing.T) {
 }
 
 func TestNewSinkRejectsUnsupportedBackend(t *testing.T) {
-	for _, backend := range []string{"", "auto", "sh", "wl-copy --help"} {
+	for _, backend := range []string{"", "sh", "wl-copy --help"} {
 		if _, err := NewSink(backend); !errors.Is(err, ErrUnsupportedBackend) {
 			t.Errorf("NewSink(%q) error = %v, want ErrUnsupportedBackend", backend, err)
 		}
+	}
+}
+
+func TestNewSinkSelectsAutomaticBackendInPriorityOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		available []string
+		want      string
+	}{
+		{name: "prefers wl-copy", available: []string{"xsel", "xclip", "wl-copy"}, want: "wl-copy"},
+		{name: "falls back to xclip", available: []string{"xsel", "xclip"}, want: "xclip"},
+		{name: "falls back to xsel", available: []string{"xsel"}, want: "xsel"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, backend := range tt.available {
+				writeBackendScript(t, dir, backend, "#!/bin/sh\nexit 0\n")
+			}
+			t.Setenv("PATH", dir)
+			sink, err := NewSink("auto")
+			if err != nil {
+				t.Fatalf("NewSink(auto) error = %v", err)
+			}
+			if got := filepath.Base(sink.executable); got != tt.want {
+				t.Errorf("selected executable = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewSinkFailsWhenExecutableIsUnavailable(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	for _, backend := range []string{"auto", "wl-copy", "xclip", "xsel"} {
+		t.Run(backend, func(t *testing.T) {
+			if _, err := NewSink(backend); !errors.Is(err, ErrBackendNotFound) {
+				t.Fatalf("NewSink(%q) error = %v, want ErrBackendNotFound", backend, err)
+			}
+		})
+	}
+}
+
+func TestSinkUsesExecutableResolvedAtStartup(t *testing.T) {
+	firstDir := t.TempDir()
+	secondDir := t.TempDir()
+	firstOutput := filepath.Join(firstDir, "output")
+	secondOutput := filepath.Join(secondDir, "output")
+	writeBackendScript(t, firstDir, "wl-copy", "#!/bin/sh\ncat > \""+firstOutput+"\"\n")
+	writeBackendScript(t, secondDir, "wl-copy", "#!/bin/sh\ncat > \""+secondOutput+"\"\n")
+	t.Setenv("PATH", firstDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	sink, err := NewSink("wl-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", secondDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := sink.WriteText(context.Background(), mustText(t, "value")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(firstOutput); err != nil {
+		t.Fatalf("resolved backend was not executed: %v", err)
+	}
+	if _, err := os.Stat(secondOutput); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("backend was looked up again after startup: %v", err)
 	}
 }
 

@@ -104,7 +104,7 @@ func TestMapArgumentsRejectsPipedStdinConflicts(t *testing.T) {
 }
 
 func TestMapArgumentsSelectsClipboardReceiveMode(t *testing.T) {
-	for _, backend := range []string{"wl-copy", "xclip", "xsel"} {
+	for _, backend := range []string{"auto", "wl-copy", "xclip", "xsel"} {
 		t.Run(backend, func(t *testing.T) {
 			result, err := mapArguments(arguments{
 				Expire:     time.Minute,
@@ -131,7 +131,6 @@ func TestMapArgumentsRejectsInvalidClipboardRequests(t *testing.T) {
 		backend   string
 		configure func(*arguments, *string)
 	}{
-		{name: "auto deferred", backend: "auto"},
 		{name: "unsupported", backend: "unknown"},
 		{name: "empty", backend: ""},
 		{
@@ -160,6 +159,25 @@ func TestMapArgumentsRejectsInvalidClipboardRequests(t *testing.T) {
 				t.Fatal("mapArguments() error = nil, want error")
 			}
 		})
+	}
+}
+
+func TestRunReportsMissingClipboardBackendAsRuntimeError(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"--receive-dir", t.TempDir(), "--clipboard", "wl-copy"},
+		nil,
+		true,
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("runWithInput() = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "not found") {
+		t.Errorf("stderr = %q, want missing-backend diagnostic", stderr.String())
 	}
 }
 
