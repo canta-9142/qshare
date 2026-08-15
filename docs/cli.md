@@ -76,8 +76,9 @@ qshare --clipboard BACKEND
 
 `BACKEND` is one of `auto`, `wl-copy`, `xclip`, or `xsel`. `auto` selects the
 first executable found in `PATH`, in the order `wl-copy`, `xclip`, then `xsel`.
-An explicitly selected backend must be found in `PATH` when qshare starts or
-startup fails with exit status `1`.
+If `auto` finds none of them, startup fails with exit status `1`. An explicitly
+selected backend must also be found in `PATH` when qshare starts or startup
+fails with exit status `1`.
 
 qshare uses fixed arguments for backends that need them: `xclip -selection
 clipboard` and `xsel --clipboard --input`. `wl-copy` needs no fixed arguments.
@@ -87,9 +88,11 @@ For every received text submission, qshare starts the selected backend once and
 writes the text to its standard input. qshare invokes the executable directly,
 without a shell. A backend failure rejects that submission and is reported to
 the browser, but does not end the receive session or prevent later submissions.
-Without `--clipboard`, each received value is written to stderr as interactive
-session output and is not copied to the system clipboard. qshare writes a clear
-submission boundary without modifying the submitted value itself.
+Without `--clipboard`, each received value is written unchanged to stdout in
+serialized submission order and is not copied to the system clipboard. qshare
+does not add separators between submissions; they form one ordinary byte stream
+that can be piped into another command. Status and diagnostic output remain on
+stderr.
 
 ## 4. Text send mode
 
@@ -136,6 +139,7 @@ Examples of stderr output:
 
 Examples of stdout output:
 
+* text received from the browser when `--clipboard` is not enabled;
 * future machine-readable output modes.
 
 This separation preserves shell composition.
@@ -249,4 +253,10 @@ Receive text and copy each submission to the clipboard, planned for v0.3:
 
 ```sh
 qshare --clipboard auto
+```
+
+Receive text as a composable stdout stream, planned for v0.3:
+
+```sh
+qshare | COMMAND
 ```

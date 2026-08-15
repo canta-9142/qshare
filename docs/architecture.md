@@ -243,11 +243,15 @@ LAN discovery and Direct Mode are separate network strategies.
 
 OS-specific implementations must not leak into transfer/session packages.
 
-## 12. Clipboard integration
+## 12. Received-text output and clipboard integration
 
-Clipboard integration is a platform adapter selected by the CLI and coordinated
-by the application layer. Core text and session logic must not depend on
-`wl-copy`, `xclip`, `xsel`, or process APIs.
+The application layer coordinates a serialized stream of browser text
+submissions. Without clipboard integration, it writes each value unchanged to
+stdout in submission order. Interactive and diagnostic output remain on
+stderr, so the stdout stream can be piped to another local command.
+
+Clipboard integration is a platform adapter selected by the CLI. Core text and
+session logic must not depend on `wl-copy`, `xclip`, `xsel`, or process APIs.
 
 Each browser text submission is a separate event. The application serializes
 these events in arrival order and invokes the selected backend once per event,

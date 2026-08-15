@@ -238,16 +238,24 @@ selected executable once and supplies the text through standard input. The
 executable must be invoked directly without a shell. A backend failure fails
 only that submission and must not terminate the session.
 
-`auto` searches `PATH` in the order `wl-copy`, `xclip`, then `xsel`. Backend
-arguments are fixed by qshare: no arguments for `wl-copy`, `-selection
+`auto` searches `PATH` in the order `wl-copy`, `xclip`, then `xsel`. If none of
+these executables is found, qshare must fail at startup with exit status `1`.
+Backend arguments are fixed by qshare: no arguments for `wl-copy`, `-selection
 clipboard` for `xclip`, and `--clipboard --input` for `xsel`. Version 0.3 does
-not accept user-defined executables or arguments. Without `--clipboard`, qshare
-writes each received value to stderr with an unambiguous submission boundary.
+not accept user-defined executables or arguments.
+
+Without `--clipboard`, qshare writes the exact bytes of each received value to
+stdout in serialized submission order. It does not add separators or otherwise
+modify a submitted value. Consecutive submissions therefore form one ordinary
+stdout byte stream, allowing the user to pipe received text into an arbitrary
+local command. Status, QR, and diagnostic output remain on stderr.
 
 Clipboard integration must remain behind an adapter; core text/session packages
-must not depend on a particular desktop clipboard implementation. A plain
-`qshare | wl-copy` pipeline is not the receive-side clipboard interface because
-it cannot represent independently handled submissions.
+must not depend on a particular desktop clipboard implementation. A pipeline
+such as `qshare | COMMAND` remains supported for consumers that want the
+serialized stdout stream. `--clipboard` is distinct because it invokes the
+selected backend once per submission and can report a failure for that specific
+submission.
 
 ## 10. Network modes
 
