@@ -52,14 +52,15 @@ The initial MVP targets:
 
 Later versions are planned to support:
 
-* Phone → PC transfer
-* Direct Mode using a temporary Wi-Fi hotspot
 * Multiple files
 * Directories
 * stdin/stdout
 * Text sharing
 * Windows
 * macOS
+
+Direct Mode using a temporary Wi-Fi hotspot remains a long-term design goal,
+but its implementation is currently deferred.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for details.
 
@@ -96,6 +97,14 @@ or:
 qshare --text "hello"
 ```
 
+Version 0.3 is planned to accept text from the browser as well. On Linux, each
+received submission may be copied to the system clipboard with a supported
+backend:
+
+```sh
+qshare --clipboard auto
+```
+
 ## Network modes
 
 qshare is designed to support two network modes.
@@ -112,9 +121,10 @@ No Internet connection is required.
 
 ### Direct Mode
 
-Planned.
+Deferred; no target release is currently assigned.
 
-When no suitable LAN is available, qshare will create a temporary Wi-Fi network on the computer.
+If development resumes, Direct Mode is intended to create a temporary Wi-Fi
+network on the computer when no suitable LAN is available.
 
 ```text
 Laptop

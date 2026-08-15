@@ -1,6 +1,6 @@
 # qshare Requirements
 
-Version: 0.2 Draft
+Version: 0.3 Draft
 
 ## 1. Overview
 
@@ -209,7 +209,7 @@ Directory traversal outside that boundary is forbidden.
 
 ## 9. stdin and text sharing
 
-A later version must support:
+Version 0.3 must support:
 
 ```sh
 cat notes.txt | qshare
@@ -221,18 +221,33 @@ and:
 qshare --text "hello"
 ```
 
-stdin behavior must follow the CLI contract in `docs/cli.md`.
+Text supplied through stdin or `--text` must be valid UTF-8 and no larger than
+1 MiB (1,048,576 bytes). Invalid UTF-8 and oversized input must be rejected.
+stdin behavior and incompatible option combinations must follow the CLI
+contract in `docs/cli.md`.
 
-A later version may also accept text submitted from the remote browser. The
-intended clipboard workflow keeps qshare running and handles each submission as
-a separate event, allowing each newly received value to replace the clipboard
-contents. A plain `qshare | wl-copy` pipeline does not satisfy this requirement
-because it represents the whole session as one input stream.
+Version 0.3 must also accept UTF-8 text submitted from the remote browser. Each
+submission is limited to 1 MiB. Concurrent submissions must be processed one at
+a time in arrival order, and the receive session must remain available for
+later submissions.
 
-The command interface, text size limit, concurrent-submission behavior, and
-failure policy for clipboard integration must be defined before release. qshare
-should not require a particular desktop clipboard implementation in its core
-packages.
+The user may enable clipboard integration with `--clipboard BACKEND`, where
+`BACKEND` is `auto` or a supported backend name. Version 0.3 supports the Linux
+backends `wl-copy`, `xclip`, and `xsel`. Each received submission starts the
+selected executable once and supplies the text through standard input. The
+executable must be invoked directly without a shell. A backend failure fails
+only that submission and must not terminate the session.
+
+`auto` searches `PATH` in the order `wl-copy`, `xclip`, then `xsel`. Backend
+arguments are fixed by qshare: no arguments for `wl-copy`, `-selection
+clipboard` for `xclip`, and `--clipboard --input` for `xsel`. Version 0.3 does
+not accept user-defined executables or arguments. Without `--clipboard`, qshare
+writes each received value to stderr with an unambiguous submission boundary.
+
+Clipboard integration must remain behind an adapter; core text/session packages
+must not depend on a particular desktop clipboard implementation. A plain
+`qshare | wl-copy` pipeline is not the receive-side clipboard interface because
+it cannot represent independently handled submissions.
 
 ## 10. Network modes
 
@@ -254,7 +269,8 @@ The initial MVP implements LAN Mode only.
 
 ### 10.2 Direct Mode
 
-Direct Mode is the intended default network strategy once implemented.
+Direct Mode is part of the long-term design, but its implementation is deferred
+and is not assigned to a release.
 
 When no suitable existing LAN is available, qshare must be capable of creating a temporary Wi-Fi network on the PC, provided the PC has compatible Wi-Fi hardware.
 
@@ -469,15 +485,16 @@ Add:
 * browser upload;
 * safe receive directory.
 
-### Phase 3: Direct Mode
+### Phase 3: Text sharing
 
 Add:
 
-* temporary Wi-Fi AP;
-* local IP assignment;
-* browser access without an existing LAN;
-* captive-portal experiments where useful;
-* clean network teardown.
+* stdin text sharing;
+* explicit `--text` sharing;
+* browser text submission;
+* serialized per-submission handling;
+* optional per-submission Linux clipboard integration through
+  `--clipboard BACKEND`.
 
 ### Phase 4 and later
 
@@ -486,12 +503,11 @@ Add progressively:
 * multiple files;
 * directory sharing;
 * archive download;
-* stdin;
-* explicit text sharing;
-* browser text submission;
-* per-submission clipboard command integration;
 * Windows;
 * macOS.
+
+Direct Mode is deferred without a target phase. Its existing architectural and
+security requirements remain applicable if implementation resumes.
 
 ## 21. Phase 1 acceptance criteria
 
