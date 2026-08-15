@@ -70,36 +70,76 @@ Tasks:
 * [x] automatic clipboard-backend selection
 * [x] text-sharing security tests
 
-## v0.4: Rich sharing
+## v0.4
 
-Potential features:
+### Multiple-file sharing
 
-* [ ] multiple files
-* [ ] directory browsing
-* [ ] individual downloads
-* [ ] on-demand archive download
-* [ ] optional single-use sessions
+Goal:
 
-## v0.5+: Additional platforms
+> Share an explicit set of files and download each file individually.
 
-* [ ] Windows LAN Mode
+Tasks:
+
+* [ ] accept multiple positional file arguments
+* [ ] validate the complete file set before starting a session
+* [ ] represent shared files as an explicit resource collection
+* [ ] assign opaque resource IDs independent of local paths and filenames
+* [ ] display the shared file list in the browser
+* [ ] support individual file downloads
+* [ ] support files with duplicate base names
+* [ ] define and enforce a shared-file count limit
+* [ ] add multiple-file security and HTTP tests
+
+### Archive download
+
+Goal:
+
+> Download all files in a session as an on-demand archive.
+
+Tasks:
+
+* [ ] stream ZIP generation without buffering the archive or creating a
+  temporary ZIP file
+* [ ] define collision handling for names inside the archive
+* [ ] stop archive generation when the request is cancelled
+* [ ] add archive security and streaming tests
+
+## v0.5
+
+### Directory sharing
+
+Goal:
+
+> Share the contents of one explicitly selected directory without exposing
+> files outside its boundary.
+
+Tasks:
+
+* [ ] define directory traversal and browser navigation behavior
+* [ ] define handling for symlinks, hidden files, and filesystem changes during
+  a session
+* [ ] define and enforce file-count and directory-depth limits
+* [ ] validate and freeze the authorized resource tree when the session starts
+* [ ] browse shared directories in the browser
+* [ ] download individual files from a shared directory
+* [ ] download a shared directory as an on-demand archive
+* [ ] add directory-boundary and symlink security tests
+
+### distribution work
+
+Tasks:
+
+* [ ] publish Linux release artifacts
+* [ ] Ubuntu Launchpad PPA
+* [ ] Fedora COPR
+* [ ] Arch User Repository (AUR)
+* [ ] Nix flakes
+
+## v1+: Additional platforms and distribution
+
+Tasks:
+
 * [ ] macOS LAN Mode
+* [ ] Windows LAN Mode
 * [ ] Homebrew distribution
 * [ ] Windows package-manager distribution
-
-## Explicitly deferred
-
-Unless requirements change:
-
-* cloud relay;
-* user accounts;
-* persistent pairing;
-* device history;
-* native mobile applications;
-* persistent qshare daemon;
-* file synchronization;
-* Bluetooth transport;
-* Direct Mode, including temporary hotspot support and platform investigation.
-
-Direct Mode remains part of the long-term design, but no release is currently
-assigned to its implementation.
