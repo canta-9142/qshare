@@ -44,15 +44,31 @@ shares multiple files.
 qshare
 ```
 
-with no positional arguments enters receive mode once Phase 2 is implemented.
+with no positional arguments enters receive mode.
 
-Receive mode may emit received text to stdout.
-
-This intentionally supports:
+The receive destination may be selected with:
 
 ```sh
-qshare | wl-copy
+qshare --receive-dir DIR
 ```
+
+The default is `~/Downloads/qshare`, with `~` resolved by qshare to the current
+user's home directory rather than by the shell.
+
+When an uploaded filename collides with an existing file, qshare does not
+overwrite it. It adds ` (n)` before the extension, starting at ` (1)`; for
+example, `photo.jpg` becomes `photo (1).jpg`.
+
+Each file-upload request is limited to 1 GiB (1,073,741,824 bytes).
+
+Receiving a file does not end the session. Receive mode continues to accept
+files until the session expires or is otherwise terminated.
+
+Receiving text from the browser and clipboard integration are deferred. The
+intended clipboard behavior is to keep qshare running and invoke a configured
+integration once for each text submission. It is not specified as
+`qshare | wl-copy`, because a plain pipeline treats the entire session as one
+input stream rather than a sequence of independently handled submissions.
 
 ## 4. stdin
 
@@ -87,7 +103,6 @@ Examples of stderr output:
 
 Examples of stdout output:
 
-* text received from a phone;
 * future machine-readable output modes.
 
 This separation preserves shell composition.
@@ -176,12 +191,6 @@ Receive:
 
 ```sh
 qshare
-```
-
-Receive text into clipboard:
-
-```sh
-qshare | wl-copy
 ```
 
 Share piped text, planned:

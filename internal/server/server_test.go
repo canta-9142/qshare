@@ -252,9 +252,9 @@ func newNamedTestServer(t *testing.T, name, content string) (*Server, *session.S
 		}
 	})
 
-	sess, err := session.New(resource, time.Hour)
+	sess, err := session.NewSend(resource, time.Hour)
 	if err != nil {
 		t.Fatalf("session.New() error = %v", err)
 	}
-	return New(sess), sess
+	return NewSend(sess), sess
 }

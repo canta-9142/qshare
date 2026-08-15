@@ -71,9 +71,25 @@ func TestSessionTokensAreSeparated(t *testing.T) {
 func TestNewRejectsNonPositiveLifetime(t *testing.T) {
 	for _, lifetime := range []time.Duration{0, -time.Nanosecond} {
 		t.Run(lifetime.String(), func(t *testing.T) {
-			if _, err := New(nil, lifetime); err == nil {
-				t.Fatal("New() error = nil, want error")
+			if _, err := NewSend(nil, lifetime); err == nil {
+				t.Fatal("NewSend() error = nil, want error")
+			}
+			if _, err := NewReceive(lifetime); err == nil {
+				t.Fatal("NewReceive() error = nil, want error")
 			}
 		})
+	}
+}
+
+func TestNewReceiveCreatesSessionWithoutResource(t *testing.T) {
+	session, err := NewReceive(time.Minute)
+	if err != nil {
+		t.Fatalf("NewReceive() error = %v", err)
+	}
+	if session.Resource() != nil {
+		t.Fatal("Resource() is not nil for receive session")
+	}
+	if !session.Authorize(session.Token(), time.Now()) {
+		t.Fatal("receive session does not authorize its token")
 	}
 }

@@ -39,20 +39,18 @@ Acceptance criteria are defined in `docs/requirements.md`.
 
 Goal:
 
-> Send files or text from a browser-capable phone back to the PC.
+> Send files from a browser-capable phone back to the PC.
 
 Tasks:
 
-* [ ] `qshare` with no positional arguments
-* [ ] upload Web UI
-* [ ] configurable receive directory
-* [ ] safe filename handling
-* [ ] collision policy
-* [ ] upload size limits
-* [ ] received text endpoint
-* [ ] stdout text output
-* [ ] `qshare | wl-copy` workflow
-* [ ] receive-mode security tests
+* [x] `qshare` with no positional arguments
+* [x] upload Web UI
+* [x] configurable receive directory
+* [x] safe filename handling
+* [x] collision policy
+* [x] upload size limits
+* [x] receive-mode security tests (completion criteria are defined in
+  `docs/security.md`)
 
 ## v0.3: Direct Mode
 
@@ -88,7 +86,16 @@ Potential features:
 * [ ] on-demand archive download
 * [ ] stdin sharing
 * [ ] explicit `--text`
+* [ ] received text endpoint
+* [ ] per-submission text handling
+* [ ] clipboard command integration
 * [ ] optional single-use sessions
+
+Clipboard integration should keep the receive session open and update the
+clipboard for each text submission. A plain `qshare | wl-copy` pipeline does
+not provide those semantics because `wl-copy` consumes one input stream, so the
+CLI contract for per-submission command execution must be defined before this
+feature is implemented.
 
 ## v0.5+: Additional platforms
 

@@ -119,13 +119,17 @@ The Phase 1 decision is recorded in
 
 Receive mode must:
 
-* use a configured receive directory;
+* use a configured receive directory, defaulting to `~/Downloads/qshare`;
 * reject path separators in remote filenames;
 * prevent `..` traversal;
-* define collision behavior;
+* preserve existing files and resolve collisions by adding ` (n)` before the
+  filename extension;
+* select collision-free names and create files atomically so concurrent uploads
+  cannot overwrite one another;
 * avoid silently overwriting existing files;
-* impose reasonable request limits;
-* handle partial uploads safely.
+* limit each file-upload request to 1 GiB (1,073,741,824 bytes);
+* remove partial files when an upload fails, is interrupted, or exceeds the
+  request limit.
 
 A remote filename is display metadata, not a trusted path.
 
@@ -196,12 +200,30 @@ Never concatenate untrusted strings directly into HTML markup.
 
 ## 15. Security tests
 
-At minimum add automated tests for:
+At minimum, send mode must have automated tests for:
 
 * invalid token rejection;
 * token separation between sessions;
 * unknown resource rejection;
 * traversal attempts;
 * encoded traversal attempts;
-* malicious upload filenames;
 * expiration.
+
+Before receive-mode security testing is considered complete, automated tests
+must cover:
+
+* invalid, cross-session, and expired-token rejection without invoking storage;
+* malicious upload filenames, including POSIX and Windows path separators,
+  traversal components, empty names, and NUL bytes;
+* request and file-size limits at their boundaries, including multipart
+  overhead;
+* malformed multipart bodies, missing file parts, and invalid
+  `Content-Disposition` values;
+* interrupted and cancelled uploads, with no partial file left behind;
+* collision handling that preserves existing files, including concurrent
+  uploads of the same filename;
+* rejection of unsupported methods, routes, and encoded traversal paths.
+
+The roadmap item for receive-mode security tests may be marked complete when
+these cases are represented by automated tests and the full test suite and
+static analysis pass.

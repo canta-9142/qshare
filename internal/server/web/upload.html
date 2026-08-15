@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Send Files | Qshare</title>
+
+  <style>
+    :root {
+      font-family: system-ui, sans-serif;
+      color-scheme: light dark;
+    }
+
+    body {
+      margin: 0;
+      background: #fff;
+      color: #111;
+    }
+
+    main {
+      width: min(100% - 32px, 560px);
+      margin: 64px auto;
+    }
+
+    h1 {
+      margin: 0 0 40px;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    form {
+      border-top: 1px solid currentColor;
+      padding-top: 24px;
+    }
+
+    input,
+    button {
+      box-sizing: border-box;
+      width: 100%;
+      font: inherit;
+    }
+
+    input {
+      margin-bottom: 24px;
+    }
+
+    button {
+      padding: 12px;
+      border: 1px solid currentColor;
+      border-radius: 0;
+      background: #111;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    progress {
+      width: 100%;
+      margin-top: 24px;
+    }
+
+    #status {
+      min-height: 1.5em;
+      margin-top: 16px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background: #111;
+        color: #eee;
+      }
+
+      button {
+        background: #eee;
+        color: #111;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Send a file</h1>
+
+    <form id="upload" action="{{.UploadURL}}" method="post"
+          enctype="multipart/form-data">
+      <input id="file" type="file" name="file" required>
+      <button type="submit">Upload</button>
+    </form>
+
+    <progress id="progress" max="100" value="0" hidden></progress>
+    <p id="status" role="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    const form = document.querySelector("#upload");
+    const progress = document.querySelector("#progress");
+    const status = document.querySelector("#status");
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+
+      const request = new XMLHttpRequest();
+      request.open("POST", form.action);
+
+      progress.hidden = false;
+      progress.value = 0;
+      status.textContent = "Uploading…";
+
+      request.upload.addEventListener("progress", event => {
+        if (event.lengthComputable) {
+          progress.value = event.loaded / event.total * 100;
+        }
+      });
+
+      request.addEventListener("load", () => {
+        if (request.status !== 201) {
+          status.textContent = "Upload failed.";
+          return;
+        }
+
+        const result = JSON.parse(request.responseText);
+        status.textContent = `Saved as ${result.name}`;
+        form.reset();
+        progress.value = 100;
+      });
+
+      request.addEventListener("error", () => {
+        status.textContent = "Upload failed.";
+      });
+
+      request.send(new FormData(form));
+    });
+  </script>
+</body>
+</html>

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +44,9 @@ func TestParseMapsArguments(t *testing.T) {
 			}
 			if result.Exit {
 				t.Fatalf("parse() Exit = true, code %d", result.Code)
+			}
+			if result.Request.Operation != app.OperationSend {
+				t.Errorf("Operation = %v, want OperationSend", result.Request.Operation)
 			}
 			if result.Request.Path != tt.wantPath {
 				t.Errorf("Path = %q, want %q", result.Request.Path, tt.wantPath)
@@ -116,7 +120,6 @@ func TestMapArgumentsRejectsInvalidRequests(t *testing.T) {
 		name string
 		args arguments
 	}{
-		{name: "no file", args: arguments{Expire: time.Minute}},
 		{name: "multiple files", args: arguments{Files: []string{"one", "two"}, Expire: time.Minute}},
 		{name: "zero lifetime", args: arguments{Files: []string{"one"}, Expire: 0}},
 		{name: "negative lifetime", args: arguments{Files: []string{"one"}, Expire: -time.Second}},
@@ -139,12 +142,6 @@ func TestRunMapsErrorsToExitCodes(t *testing.T) {
 		wantDiagnostic string
 	}{
 		{
-			name:           "invalid usage",
-			argv:           nil,
-			wantCode:       2,
-			wantDiagnostic: "exactly one file must be specified",
-		},
-		{
 			name:           "runtime error",
 			argv:           []string{"missing-file"},
 			wantCode:       1,
@@ -166,5 +163,44 @@ func TestRunMapsErrorsToExitCodes(t *testing.T) {
 				t.Errorf("stderr = %q, want substring %q", stderr.String(), tt.wantDiagnostic)
 			}
 		})
+	}
+}
+
+func TestMapArgumentsSelectsReceiveMode(t *testing.T) {
+	result, err := mapArguments(arguments{
+		Expire:     time.Minute,
+		ReceiveDir: "/tmp/received",
+	})
+	if err != nil {
+		t.Fatalf("mapArguments() error = %v", err)
+	}
+
+	if result.Request.Operation != app.OperationReceive {
+		t.Errorf("Operation = %v, want OperationReceive",
+			result.Request.Operation)
+	}
+	if result.Request.ReceiveDir != "/tmp/received" {
+		t.Errorf("ReceiveDir = %q, want %q",
+			result.Request.ReceiveDir, "/tmp/received")
+	}
+}
+
+func TestMapArgumentsRejectsReceiveDirInSendMode(t *testing.T) {
+	_, err := mapArguments(arguments{
+		Expire:     time.Minute,
+		ReceiveDir: "/tmp/received",
+		Files:      []string{"example.txt"},
+	})
+	if err == nil {
+		t.Fatal("mapArguments() error = nil, want error")
+	}
+}
+
+func TestReceiveDirFromHome(t *testing.T) {
+	got := receiveDirFromHome("/home/alice")
+	want := filepath.Join("/home/alice", "Downloads", "qshare")
+
+	if got != want {
+		t.Errorf("receiveDirFromHome() = %q, want %q", got, want)
 	}
 }

@@ -13,7 +13,27 @@ type Session struct {
 	expiresAt time.Time
 }
 
-func New(resource *share.File, lifetime time.Duration) (*Session, error) {
+func NewSend(resource *share.File, lifetime time.Duration) (*Session, error) {
+	session, err := newSession(lifetime)
+	if err != nil {
+		return nil, err
+	}
+
+	session.resource = resource
+
+	return session, nil
+}
+
+func NewReceive(lifetime time.Duration) (*Session, error) {
+	session, err := newSession(lifetime)
+	if err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+func newSession(lifetime time.Duration) (*Session, error) {
 	if lifetime <= 0 {
 		return nil, fmt.Errorf("lifetime must be positive: %s", lifetime)
 	}
@@ -25,7 +45,6 @@ func New(resource *share.File, lifetime time.Duration) (*Session, error) {
 
 	return &Session{
 		token:     token,
-		resource:  resource,
 		expiresAt: time.Now().Add(lifetime),
 	}, nil
 }

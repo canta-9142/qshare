@@ -71,15 +71,16 @@ See [`docs/roadmap.md`](docs/roadmap.md) for details.
 qshare photo.jpg
 ```
 
-### Receive from another device
-
-Planned:
+### Receive a file from another device
 
 ```sh
 qshare
 ```
 
-When started without file arguments, qshare will enter receive mode and expose an upload page to the connected device.
+When started without file arguments, qshare enters receive mode and exposes an
+upload page to the connected device. Received files are saved under
+`~/Downloads/qshare` by default. Use `--receive-dir DIR` to select another
+destination.
 
 ### Share text
 
