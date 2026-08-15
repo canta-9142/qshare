@@ -1,11 +1,16 @@
 package app
 
-import "time"
+import (
+	"time"
+
+	"github.com/canta-9142/qshare/internal/share"
+)
 
 type Operation int
 
 const (
-	OperationSend Operation = iota
+	OperationSendFile Operation = iota
+	OperationSendText
 	OperationReceive
 )
 
@@ -19,7 +24,9 @@ const (
 type Request struct {
 	Operation   Operation
 	Path        string
+	Text        share.Text
 	ReceiveDir  string
+	Clipboard   string
 	NetworkMode NetworkMode
 	Lifetime    time.Duration
 }
