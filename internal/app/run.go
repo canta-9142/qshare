@@ -10,7 +10,6 @@ import (
 
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
-	"github.com/canta-9142/qshare/internal/share"
 )
 
 func (a *Application) Run(ctx context.Context, req Request) error {
@@ -30,13 +29,13 @@ func (a *Application) Run(ctx context.Context, req Request) error {
 }
 
 func (a *Application) runSendFile(ctx context.Context, req Request) (runErr error) {
-	resource, err := share.Open(req.Path)
+	resources, err := a.openCollection(req.Paths)
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		if err := resource.Close(); err != nil {
+		if err := resources.Close(); err != nil {
 			runErr = errors.Join(
 				runErr,
 				fmt.Errorf("failed to close resource: %w", err),
@@ -51,7 +50,7 @@ func (a *Application) runSendFile(ctx context.Context, req Request) (runErr erro
 	}
 
 	// create session
-	sess, err := session.NewSendFile(resource, req.Lifetime)
+	sess, err := session.NewSendFiles(resources, req.Lifetime)
 	if err != nil {
 		return err
 	}
@@ -82,7 +81,7 @@ func (a *Application) runSendFile(ctx context.Context, req Request) (runErr erro
 	payload := downloadURL.String()
 
 	fmt.Fprintf(a.stderr, "\nQshare\n\n")
-	fmt.Fprintf(a.stderr, "Sharing  %s\n\n", resource.Name())
+	fmt.Fprintf(a.stderr, "Sharing  %d file(s)\n\n", len(resources.Resources()))
 
 	if err := a.renderQR(a.stderr, payload); err != nil {
 		return errors.Join(

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -241,21 +242,21 @@ func TestParseMapsArguments(t *testing.T) {
 	tests := []struct {
 		name         string
 		argv         []string
-		wantPath     string
+		wantPaths    string
 		wantMode     app.NetworkMode
 		wantLifetime time.Duration
 	}{
 		{
 			name:         "defaults",
 			argv:         []string{"example.txt"},
-			wantPath:     "example.txt",
+			wantPaths:    "example.txt",
 			wantMode:     app.NetworkAuto,
 			wantLifetime: 10 * time.Minute,
 		},
 		{
 			name:         "LAN and expiration",
 			argv:         []string{"--lan", "--expire", "30s", "example.txt"},
-			wantPath:     "example.txt",
+			wantPaths:    "example.txt",
 			wantMode:     app.NetworkLAN,
 			wantLifetime: 30 * time.Second,
 		},
@@ -275,8 +276,8 @@ func TestParseMapsArguments(t *testing.T) {
 			if result.Request.Operation != app.OperationSendFile {
 				t.Errorf("Operation = %v, want OperationSendFile", result.Request.Operation)
 			}
-			if result.Request.Path != tt.wantPath {
-				t.Errorf("Path = %q, want %q", result.Request.Path, tt.wantPath)
+			if result.Request.Paths[0] != tt.wantPaths {
+				t.Errorf("Path = %q, want %q", result.Request.Paths[0], tt.wantPaths)
 			}
 			if result.Request.NetworkMode != tt.wantMode {
 				t.Errorf("NetworkMode = %v, want %v", result.Request.NetworkMode, tt.wantMode)
@@ -424,7 +425,7 @@ func TestMapArgumentsRejectsInvalidRequests(t *testing.T) {
 		name string
 		args arguments
 	}{
-		{name: "multiple files", args: arguments{Files: []string{"one", "two"}, Expire: time.Minute}},
+		{name: "too many files", args: arguments{Files: make([]string, share.MaxFiles+1), Expire: time.Minute}},
 		{name: "zero lifetime", args: arguments{Files: []string{"one"}, Expire: 0}},
 		{name: "negative lifetime", args: arguments{Files: []string{"one"}, Expire: -time.Second}},
 	}
@@ -435,6 +436,17 @@ func TestMapArgumentsRejectsInvalidRequests(t *testing.T) {
 				t.Fatal("mapArguments() error = nil, want error")
 			}
 		})
+	}
+}
+
+func TestMapArgumentsAcceptsMultipleFiles(t *testing.T) {
+	want := []string{"one", "two", "three"}
+	result, err := mapArguments(arguments{Files: want, Expire: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(result.Request.Paths, want) {
+		t.Fatalf("Paths = %v, want %v", result.Request.Paths, want)
 	}
 }
 

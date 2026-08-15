@@ -23,7 +23,7 @@ const (
 
 type Request struct {
 	Operation   Operation
-	Path        string
+	Paths       []string
 	Text        share.Text
 	ReceiveDir  string
 	Clipboard   string
