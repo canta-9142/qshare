@@ -3,6 +3,8 @@ package session
 import (
 	"testing"
 	"time"
+
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 func TestSessionAuthorize(t *testing.T) {
@@ -71,13 +73,34 @@ func TestSessionTokensAreSeparated(t *testing.T) {
 func TestNewRejectsNonPositiveLifetime(t *testing.T) {
 	for _, lifetime := range []time.Duration{0, -time.Nanosecond} {
 		t.Run(lifetime.String(), func(t *testing.T) {
-			if _, err := NewSend(nil, lifetime); err == nil {
-				t.Fatal("NewSend() error = nil, want error")
+			if _, err := NewSendFile(nil, lifetime); err == nil {
+				t.Fatal("NewSendFile() error = nil, want error")
+			}
+			if _, err := NewSendText(share.Text{}, lifetime); err == nil {
+				t.Fatal("NewSendText() error = nil, want error")
 			}
 			if _, err := NewReceive(lifetime); err == nil {
 				t.Fatal("NewReceive() error = nil, want error")
 			}
 		})
+	}
+}
+
+func TestNewSendTextStoresText(t *testing.T) {
+	text, err := share.NewText([]byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSendText(text, time.Minute)
+	if err != nil {
+		t.Fatalf("NewSendText() error = %v", err)
+	}
+	got, ok := session.Text()
+	if !ok || got.String() != "hello" {
+		t.Fatalf("Text() = %q, %v; want hello, true", got.String(), ok)
+	}
+	if session.Resource() != nil {
+		t.Fatal("Resource() is not nil for text send session")
 	}
 }
 

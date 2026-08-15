@@ -10,16 +10,28 @@ import (
 type Session struct {
 	token     Token
 	resource  *share.File
+	text      *share.Text
 	expiresAt time.Time
 }
 
-func NewSend(resource *share.File, lifetime time.Duration) (*Session, error) {
+func NewSendFile(resource *share.File, lifetime time.Duration) (*Session, error) {
 	session, err := newSession(lifetime)
 	if err != nil {
 		return nil, err
 	}
 
 	session.resource = resource
+
+	return session, nil
+}
+
+func NewSendText(text share.Text, lifetime time.Duration) (*Session, error) {
+	session, err := newSession(lifetime)
+	if err != nil {
+		return nil, err
+	}
+
+	session.text = &text
 
 	return session, nil
 }
@@ -62,6 +74,13 @@ func (s *Session) Token() Token {
 
 func (s *Session) Resource() *share.File {
 	return s.resource
+}
+
+func (s *Session) Text() (share.Text, bool) {
+	if s.text == nil {
+		return share.Text{}, false
+	}
+	return *s.text, true
 }
 
 func (s *Session) ExpiresAt() time.Time {

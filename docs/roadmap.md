@@ -60,15 +60,15 @@ Goal:
 
 Tasks:
 
-* [ ] stdin text sharing
-* [ ] explicit `--text TEXT`
-* [ ] browser text submission
-* [ ] 1 MiB text limits
-* [ ] serialized per-submission handling
-* [ ] `--clipboard BACKEND`
-* [ ] Linux clipboard backends (`wl-copy`, `xclip`, and `xsel`)
-* [ ] automatic clipboard-backend selection
-* [ ] text-sharing security tests
+* [x] stdin text sharing
+* [x] explicit `--text TEXT`
+* [x] browser text submission
+* [x] 1 MiB text limits
+* [x] serialized per-submission handling
+* [x] `--clipboard BACKEND`
+* [x] Linux clipboard backends (`wl-copy`, `xclip`, and `xsel`)
+* [x] automatic clipboard-backend selection
+* [x] text-sharing security tests
 
 ## v0.4: Rich sharing
 

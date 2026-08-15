@@ -8,14 +8,18 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
 )
 
 func (a *Application) Run(ctx context.Context, req Request) error {
 	switch req.Operation {
-	case OperationSend:
-		return a.runSend(ctx, req)
+	case OperationSendFile:
+		return a.runSendFile(ctx, req)
+
+	case OperationSendText:
+		return a.runSendText(ctx, req)
 
 	case OperationReceive:
 		return a.runReceive(ctx, req)
@@ -25,7 +29,7 @@ func (a *Application) Run(ctx context.Context, req Request) error {
 	}
 }
 
-func (a *Application) runSend(ctx context.Context, req Request) (runErr error) {
+func (a *Application) runSendFile(ctx context.Context, req Request) (runErr error) {
 	resource, err := share.Open(req.Path)
 	if err != nil {
 		return err
@@ -47,7 +51,7 @@ func (a *Application) runSend(ctx context.Context, req Request) (runErr error) {
 	}
 
 	// create session
-	sess, err := session.NewSend(resource, req.Lifetime)
+	sess, err := session.NewSendFile(resource, req.Lifetime)
 	if err != nil {
 		return err
 	}
@@ -94,6 +98,54 @@ func (a *Application) runSend(ctx context.Context, req Request) (runErr error) {
 	return a.runSession(ctx, sess, srv)
 }
 
+func (a *Application) runSendText(ctx context.Context, req Request) error {
+	sess, err := session.NewSendText(req.Text, req.Lifetime)
+	if err != nil {
+		return err
+	}
+
+	advertiseAddr, err := a.advertiseAddress()
+	if err != nil {
+		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
+	}
+
+	srv := a.newTextServer(sess)
+	bindAddr := net.JoinHostPort(advertiseAddr.String(), defaultServerPort)
+	listenAddr, err := srv.Start(bindAddr)
+	if err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+
+	_, port, err := net.SplitHostPort(listenAddr.String())
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("failed to parse listen address: %w", err),
+			srv.Close(),
+		)
+	}
+
+	accessURL := url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(advertiseAddr.String(), port),
+		Path:   "/s/" + sess.Token().String(),
+	}
+
+	fmt.Fprintf(a.stderr, "\nQshare\n\n")
+	fmt.Fprintf(a.stderr, "Sharing text\n\n")
+
+	if err := a.renderQR(a.stderr, accessURL.String()); err != nil {
+		return errors.Join(
+			fmt.Errorf("failed to render QR code: %w", err),
+			srv.Close(),
+		)
+	}
+
+	fmt.Fprintf(a.stderr, "\n%s\n\n", accessURL.String())
+	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime)
+
+	return a.runSession(ctx, sess, srv)
+}
+
 func (a *Application) runReceive(ctx context.Context, req Request) error {
 	store, err := a.openReceiveStore(req.ReceiveDir)
 	if err != nil {
@@ -105,12 +157,26 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		return err
 	}
 
+	var textSink receive.TextSink = receive.NewWriterTextSink(a.stdout)
+	if req.Clipboard != "" {
+		textSink, err = a.newClipboardSink(req.Clipboard)
+		if err != nil {
+			return fmt.Errorf("configure clipboard backend: %w", err)
+		}
+	}
+
+	textProcessor := receive.NewTextProcessor(
+		textSink,
+		receive.TextQueueCapacity,
+	)
+	defer textProcessor.Close()
+
 	advertiseAddr, err := a.advertiseAddress()
 	if err != nil {
 		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
 
-	srv := a.newReceiveServer(sess, store)
+	srv := a.newReceiveServer(sess, store, textProcessor)
 	bindAddr := net.JoinHostPort(advertiseAddr.String(), defaultServerPort)
 	listenAddr, err := srv.Start(bindAddr)
 	if err != nil {

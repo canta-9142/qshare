@@ -15,6 +15,7 @@ var uploadPageTemplate = template.Must(
 
 type uploadPageData struct {
 	UploadURL string
+	TextURL   string
 }
 
 func (s *Server) uploadPage(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +37,7 @@ func (s *Server) uploadPage(w http.ResponseWriter, r *http.Request) {
 
 	data := uploadPageData{
 		UploadURL: "/u/" + token.String(),
+		TextURL:   "/t/" + token.String(),
 	}
 
 	if err := uploadPageTemplate.ExecuteTemplate(w, "upload.html", data); err != nil {

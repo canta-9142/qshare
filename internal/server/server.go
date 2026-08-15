@@ -11,15 +11,21 @@ import (
 
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 type uploadStore interface {
 	Save(context.Context, string, io.Reader) (receive.Result, error)
 }
 
+type textSubmitter interface {
+	Submit(context.Context, share.Text) error
+}
+
 type Server struct {
 	session              *session.Session
 	uploadStore          uploadStore
+	textSubmitter        textSubmitter
 	maxUploadRequestSize int64
 	server               *http.Server
 	mux                  *http.ServeMux
@@ -28,7 +34,7 @@ type Server struct {
 	now                  func() time.Time
 }
 
-func NewSend(sess *session.Session) *Server {
+func NewSendFile(sess *session.Session) *Server {
 	server := newServer(sess)
 
 	server.mux.HandleFunc("GET /s/{token}", server.downloadPage)
@@ -38,12 +44,22 @@ func NewSend(sess *session.Session) *Server {
 	return server
 }
 
-func NewReceive(sess *session.Session, store uploadStore) *Server {
+func NewSendText(sess *session.Session) *Server {
+	server := newServer(sess)
+
+	server.mux.HandleFunc("GET /s/{token}", server.textPage)
+
+	return server
+}
+
+func NewReceive(sess *session.Session, store uploadStore, submitter textSubmitter) *Server {
 	server := newServer(sess)
 
 	server.mux.HandleFunc("GET /s/{token}", server.uploadPage)
 	server.mux.HandleFunc("POST /u/{token}", server.upload)
+	server.mux.HandleFunc("POST /t/{token}", server.submitText)
 	server.uploadStore = store
+	server.textSubmitter = submitter
 	server.maxUploadRequestSize = receive.MaxFileSize + multipartOverhead
 
 	return server

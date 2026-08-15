@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/canta-9142/qshare/internal/app"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 type parseResult struct {
@@ -18,6 +19,15 @@ type parseResult struct {
 }
 
 func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
+	return parseWithInput(argv, stdinInput{terminal: true}, stdout, stderr)
+}
+
+type stdinInput struct {
+	reader   io.Reader
+	terminal bool
+}
+
+func parseWithInput(argv []string, stdin stdinInput, stdout io.Writer, stderr io.Writer) (parseResult, error) {
 	var args arguments
 
 	parser, err := arg.NewParser(arg.Config{
@@ -46,10 +56,14 @@ func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, erro
 		}, nil
 	}
 
-	return mapArguments(args)
+	return mapArgumentsWithInput(args, stdin)
 }
 
 func mapArguments(args arguments) (parseResult, error) {
+	return mapArgumentsWithInput(args, stdinInput{terminal: true})
+}
+
+func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error) {
 	if args.Expire <= 0 {
 		return parseResult{}, errors.New("session lifetime must be greater than zero")
 	}
@@ -57,6 +71,93 @@ func mapArguments(args arguments) (parseResult, error) {
 	networkMode := app.NetworkAuto
 	if args.LAN {
 		networkMode = app.NetworkLAN
+	}
+
+	if !stdin.terminal {
+		switch {
+		case len(args.Files) != 0:
+			return parseResult{}, errors.New("piped stdin cannot be combined with a file")
+		case args.Text != nil:
+			return parseResult{}, errors.New("piped stdin cannot be combined with --text")
+		case args.Clipboard != nil:
+			return parseResult{}, errors.New("piped stdin cannot be combined with --clipboard")
+		case args.ReceiveDir != "":
+			return parseResult{}, errors.New("piped stdin cannot be combined with --receive-dir")
+		}
+
+		value, err := io.ReadAll(io.LimitReader(stdin.reader, share.MaxTextSize+1))
+		if err != nil {
+			return parseResult{}, fmt.Errorf("read text from stdin: %w", err)
+		}
+		text, err := share.NewText(value)
+		if err != nil {
+			return parseResult{}, fmt.Errorf("invalid stdin text: %w", err)
+		}
+
+		return parseResult{
+			Request: app.Request{
+				Operation:   app.OperationSendText,
+				Text:        text,
+				NetworkMode: networkMode,
+				Lifetime:    args.Expire,
+			},
+		}, nil
+	}
+
+	if args.Text != nil {
+		if len(args.Files) != 0 {
+			return parseResult{}, errors.New("--text cannot be combined with a file")
+		}
+		if args.ReceiveDir != "" {
+			return parseResult{}, errors.New("--receive-dir cannot be used when sharing text")
+		}
+		if args.Clipboard != nil {
+			return parseResult{}, errors.New("--text cannot be combined with --clipboard")
+		}
+
+		text, err := share.NewText([]byte(*args.Text))
+		if err != nil {
+			return parseResult{}, fmt.Errorf("invalid --text value: %w", err)
+		}
+
+		return parseResult{
+			Request: app.Request{
+				Operation:   app.OperationSendText,
+				Text:        text,
+				NetworkMode: networkMode,
+				Lifetime:    args.Expire,
+			},
+		}, nil
+	}
+
+	if args.Clipboard != nil {
+		if len(args.Files) != 0 {
+			return parseResult{}, errors.New("--clipboard cannot be combined with a file")
+		}
+		switch *args.Clipboard {
+		case "auto", "wl-copy", "xclip", "xsel":
+		default:
+			return parseResult{}, fmt.Errorf("unsupported clipboard backend: %q", *args.Clipboard)
+		}
+
+		receiveDir := args.ReceiveDir
+		if receiveDir == "" {
+			dir, err := defaultReceiveDir()
+			if err != nil {
+				return parseResult{}, err
+			}
+			receiveDir = dir
+		}
+
+		return parseResult{
+			Request: app.Request{
+				Operation:   app.OperationReceive,
+				ReceiveDir:  receiveDir,
+				Clipboard:   *args.Clipboard,
+				NetworkMode: networkMode,
+				Lifetime:    args.Expire,
+			},
+		}, nil
 	}
 
 	switch len(args.Files) {
@@ -86,7 +187,7 @@ func mapArguments(args arguments) (parseResult, error) {
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationSend,
+				Operation:   app.OperationSendFile,
 				Path:        args.Files[0],
 				NetworkMode: networkMode,
 				Lifetime:    args.Expire,

@@ -88,25 +88,35 @@ destination.
 
 ### Share text
 
-Planned for v0.3; these commands are not implemented yet:
+Share UTF-8 text from stdin:
 
 ```sh
 printf 'hello\n' | qshare
 ```
 
-or:
+Or supply it explicitly:
 
 ```sh
 qshare --text "hello"
 ```
 
-Version 0.3 is also planned to accept text from the browser. On Linux, each
-received submission will be copyable to the system clipboard with a supported
-backend while qshare remains running:
+In receive mode, text submitted from the browser is written unchanged to
+stdout. Submissions can therefore be piped to another command:
+
+```sh
+qshare | COMMAND
+```
+
+Clipboard integration can instead be enabled with automatic Linux backend
+selection:
 
 ```sh
 qshare --clipboard auto
 ```
+
+Automatic selection checks `wl-copy`, `xclip`, then `xsel`. A backend can also
+be selected explicitly with `--clipboard wl-copy`, `--clipboard xclip`, or
+`--clipboard xsel`.
 
 ## Network modes
 
