@@ -12,6 +12,7 @@ import (
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/server"
 	"github.com/canta-9142/qshare/internal/session"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 const (
@@ -36,26 +37,37 @@ type receiveStore interface {
 
 type Application struct {
 	stderr           io.Writer
+	stdout           io.Writer
 	advertiseAddress func() (netip.Addr, error)
 	newSendServer    func(*session.Session) sessionServer
 	newTextServer    func(*session.Session) sessionServer
-	newReceiveServer func(*session.Session, receiveStore) sessionServer
+	newReceiveServer func(*session.Session, receiveStore, textSubmitter) sessionServer
 	openReceiveStore func(string) (receiveStore, error)
 	renderQR         func(io.Writer, string) error
 }
 
 type Dependencies struct {
+	Stdout io.Writer
 	Stderr io.Writer
 }
 
+type textSubmitter interface {
+	Submit(context.Context, share.Text) error
+}
+
 func New(deps Dependencies) *Application {
+	stdout := deps.Stdout
+	if stdout == nil {
+		stdout = io.Discard
+	}
 	return &Application{
+		stdout:           stdout,
 		stderr:           deps.Stderr,
 		advertiseAddress: network.AdvertiseAddress,
 		newSendServer:    func(s *session.Session) sessionServer { return server.NewSendFile(s) },
 		newTextServer:    func(s *session.Session) sessionServer { return server.NewSendText(s) },
-		newReceiveServer: func(s *session.Session, store receiveStore) sessionServer {
-			return server.NewReceive(s, store)
+		newReceiveServer: func(s *session.Session, store receiveStore, submitter textSubmitter) sessionServer {
+			return server.NewReceive(s, store, submitter)
 		},
 		openReceiveStore: func(dir string) (receiveStore, error) {
 			return receive.OpenStore(dir)

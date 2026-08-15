@@ -100,9 +100,14 @@ Or supply it explicitly:
 qshare --text "hello"
 ```
 
-Version 0.3 is also planned to accept text from the browser. On Linux, each
-received submission will be copyable to the system clipboard with a supported
-backend while qshare remains running:
+In receive mode, text submitted from the browser is written unchanged to
+stdout. Submissions can therefore be piped to another command:
+
+```sh
+qshare | COMMAND
+```
+
+Clipboard integration with a supported Linux backend is planned for v0.3:
 
 ```sh
 qshare --clipboard auto

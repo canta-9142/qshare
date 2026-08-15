@@ -255,7 +255,7 @@ Receive text and copy each submission to the clipboard, planned for v0.3:
 qshare --clipboard auto
 ```
 
-Receive text as a composable stdout stream, planned for v0.3:
+Receive text as a composable stdout stream:
 
 ```sh
 qshare | COMMAND

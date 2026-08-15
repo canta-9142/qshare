@@ -119,8 +119,9 @@ func newTestApplication(t *testing.T) (*Application, *fakeSessionServer, *bytes.
 
 func TestApplicationRunReceiveMode(t *testing.T) {
 	stderr := &bytes.Buffer{}
+	stdout := &bytes.Buffer{}
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{Stderr: stderr})
+	application := New(Dependencies{Stdout: stdout, Stderr: stderr})
 	application.advertiseAddress = func() (netip.Addr, error) {
 		return netip.MustParseAddr("192.0.2.10"), nil
 	}
@@ -135,8 +136,15 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 		return store, nil
 	}
 	serverReceivedStore := false
-	application.newReceiveServer = func(_ *session.Session, got receiveStore) sessionServer {
+	application.newReceiveServer = func(_ *session.Session, got receiveStore, submitter textSubmitter) sessionServer {
 		serverReceivedStore = got != nil
+		text, err := share.NewText([]byte("received text"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := submitter.Submit(context.Background(), text); err != nil {
+			t.Fatalf("Submit() error = %v", err)
+		}
 		return fake
 	}
 	var qrPayload string
@@ -161,6 +169,9 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 	}
 	if !serverReceivedStore {
 		t.Fatal("receive server did not receive opened store")
+	}
+	if got := stdout.String(); got != "received text" {
+		t.Errorf("stdout = %q, want received text", got)
 	}
 	if qrPayload == "" || !strings.HasPrefix(qrPayload, "http://192.0.2.10:55544/s/") {
 		t.Errorf("QR payload = %q", qrPayload)
@@ -231,7 +242,7 @@ func TestApplicationReceiveStoreFailurePreventsServerStart(t *testing.T) {
 		return nil, want
 	}
 	serverCreated := false
-	application.newReceiveServer = func(*session.Session, receiveStore) sessionServer {
+	application.newReceiveServer = func(*session.Session, receiveStore, textSubmitter) sessionServer {
 		serverCreated = true
 		return nil
 	}

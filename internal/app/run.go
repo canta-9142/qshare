@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
 )
@@ -156,12 +157,18 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		return err
 	}
 
+	textProcessor := receive.NewTextProcessor(
+		receive.NewWriterTextSink(a.stdout),
+		receive.TextQueueCapacity,
+	)
+	defer textProcessor.Close()
+
 	advertiseAddr, err := a.advertiseAddress()
 	if err != nil {
 		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
 
-	srv := a.newReceiveServer(sess, store)
+	srv := a.newReceiveServer(sess, store, textProcessor)
 	bindAddr := net.JoinHostPort(advertiseAddr.String(), defaultServerPort)
 	listenAddr, err := srv.Start(bindAddr)
 	if err != nil {

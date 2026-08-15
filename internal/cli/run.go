@@ -37,6 +37,7 @@ func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout i
 	defer stopSignals()
 
 	application := app.New(app.Dependencies{
+		Stdout: stdout,
 		Stderr: stderr,
 	})
 

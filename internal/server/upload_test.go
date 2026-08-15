@@ -318,7 +318,7 @@ func newReceiveTestServer(t *testing.T, store uploadStore) (*Server, *session.Se
 	if err != nil {
 		t.Fatalf("session.NewReceive() error = %v", err)
 	}
-	return NewReceive(sess, store), sess
+	return NewReceive(sess, store, nil), sess
 }
 
 func newUploadRequest(t *testing.T, path, filename, content string) *http.Request {

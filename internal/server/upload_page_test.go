@@ -28,6 +28,12 @@ func TestUploadPage(t *testing.T) {
 	if uploadURL := "/u/" + sess.Token().String(); !strings.Contains(string(body), uploadURL) {
 		t.Errorf("page does not contain authenticated upload URL %q", uploadURL)
 	}
+	if textURL := "/t/" + sess.Token().String(); !strings.Contains(string(body), textURL) {
+		t.Errorf("page does not contain authenticated text URL %q", textURL)
+	}
+	if !strings.Contains(string(body), `id="text-form"`) {
+		t.Error("page does not contain text submission form")
+	}
 	for name, want := range map[string]string{
 		"Cache-Control":           "private, no-store",
 		"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'",
