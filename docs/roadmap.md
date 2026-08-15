@@ -80,6 +80,11 @@ Goal:
 
 Tasks:
 
+* [x] define a maximum of 100 shared files and reject larger selections before
+  opening files or creating a session
+* [x] define CLI-order preservation and duplicate-base-name behavior
+* [x] define opaque resource IDs independent of paths and filenames
+* [x] define all-or-nothing validation before session startup
 * [ ] accept multiple positional file arguments
 * [ ] validate the complete file set before starting a session
 * [ ] represent shared files as an explicit resource collection
@@ -87,7 +92,7 @@ Tasks:
 * [ ] display the shared file list in the browser
 * [ ] support individual file downloads
 * [ ] support files with duplicate base names
-* [ ] define and enforce a shared-file count limit
+* [ ] enforce the shared-file count limit
 * [ ] add multiple-file security and HTTP tests
 
 ### Archive download
