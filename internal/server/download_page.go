@@ -15,9 +15,13 @@ var downloadPage = template.Must(
 )
 
 type downloadPageData struct {
-	FileName    string
-	FileSize    string
-	DownloadURL string
+	Files []downloadFileData
+}
+
+type downloadFileData struct {
+	Name string
+	Size string
+	URL  string
 }
 
 func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
@@ -32,8 +36,6 @@ func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resource := s.session.Resource()
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
@@ -41,10 +43,13 @@ func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 
-	data := downloadPageData{
-		FileName:    resource.Name(),
-		FileSize:    formatFileSize(resource.Size()),
-		DownloadURL: "/d/" + token.String(),
+	data := downloadPageData{}
+	for _, resource := range s.session.Resources().Resources() {
+		data.Files = append(data.Files, downloadFileData{
+			Name: resource.Name(),
+			Size: formatFileSize(resource.Size()),
+			URL:  "/d/" + token.String() + "/" + string(resource.ID()),
+		})
 	}
 
 	if err := downloadPage.ExecuteTemplate(w, "download.html", data); err != nil {

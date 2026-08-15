@@ -36,8 +36,8 @@ func TestDownloadPage(t *testing.T) {
 		t.Error("page does not contain shared filename")
 	}
 
-	downloadURL := "/d/" + sess.Token().String()
-	if !strings.Contains(html, downloadURL) {
+	wantURL := downloadURL(sess)
+	if !strings.Contains(html, wantURL) {
 		t.Error("page does not contain authenticated download URL")
 	}
 	for name, want := range map[string]string{
