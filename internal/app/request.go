@@ -26,6 +26,7 @@ type Request struct {
 	Path        string
 	Text        share.Text
 	ReceiveDir  string
+	Clipboard   string
 	NetworkMode NetworkMode
 	Lifetime    time.Duration
 }

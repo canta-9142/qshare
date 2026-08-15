@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/platform/clipboard"
 	"github.com/canta-9142/qshare/internal/platform/network"
 	"github.com/canta-9142/qshare/internal/qr"
 	"github.com/canta-9142/qshare/internal/receive"
@@ -43,6 +44,7 @@ type Application struct {
 	newTextServer    func(*session.Session) sessionServer
 	newReceiveServer func(*session.Session, receiveStore, textSubmitter) sessionServer
 	openReceiveStore func(string) (receiveStore, error)
+	newClipboardSink func(string) (receive.TextSink, error)
 	renderQR         func(io.Writer, string) error
 }
 
@@ -71,6 +73,9 @@ func New(deps Dependencies) *Application {
 		},
 		openReceiveStore: func(dir string) (receiveStore, error) {
 			return receive.OpenStore(dir)
+		},
+		newClipboardSink: func(backend string) (receive.TextSink, error) {
+			return clipboard.NewSink(backend)
 		},
 		renderQR: qr.Render,
 	}

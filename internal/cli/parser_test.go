@@ -103,6 +103,66 @@ func TestMapArgumentsRejectsPipedStdinConflicts(t *testing.T) {
 	}
 }
 
+func TestMapArgumentsSelectsClipboardReceiveMode(t *testing.T) {
+	for _, backend := range []string{"wl-copy", "xclip", "xsel"} {
+		t.Run(backend, func(t *testing.T) {
+			result, err := mapArguments(arguments{
+				Expire:     time.Minute,
+				ReceiveDir: "/tmp/received",
+				Clipboard:  &backend,
+			})
+			if err != nil {
+				t.Fatalf("mapArguments() error = %v", err)
+			}
+			if result.Request.Operation != app.OperationReceive {
+				t.Errorf("Operation = %v, want OperationReceive", result.Request.Operation)
+			}
+			if result.Request.Clipboard != backend {
+				t.Errorf("Clipboard = %q, want %q", result.Request.Clipboard, backend)
+			}
+		})
+	}
+}
+
+func TestMapArgumentsRejectsInvalidClipboardRequests(t *testing.T) {
+	text := "text"
+	tests := []struct {
+		name      string
+		backend   string
+		configure func(*arguments, *string)
+	}{
+		{name: "auto deferred", backend: "auto"},
+		{name: "unsupported", backend: "unknown"},
+		{name: "empty", backend: ""},
+		{
+			name:    "with file",
+			backend: "wl-copy",
+			configure: func(args *arguments, _ *string) {
+				args.Files = []string{"file.txt"}
+			},
+		},
+		{
+			name:    "with explicit text",
+			backend: "wl-copy",
+			configure: func(args *arguments, _ *string) {
+				args.Text = &text
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := arguments{Expire: time.Minute, Clipboard: &tt.backend}
+			if tt.configure != nil {
+				tt.configure(&args, &tt.backend)
+			}
+			if _, err := mapArguments(args); err == nil {
+				t.Fatal("mapArguments() error = nil, want error")
+			}
+		})
+	}
+}
+
 func TestPipedStdinConflictExitsWithUsageStatus(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

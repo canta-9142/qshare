@@ -111,6 +111,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		if args.ReceiveDir != "" {
 			return parseResult{}, errors.New("--receive-dir cannot be used when sharing text")
 		}
+		if args.Clipboard != nil {
+			return parseResult{}, errors.New("--text cannot be combined with --clipboard")
+		}
 
 		text, err := share.NewText([]byte(*args.Text))
 		if err != nil {
@@ -128,7 +131,35 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 	}
 
 	if args.Clipboard != nil {
-		return parseResult{}, errors.New("--clipboard is not available yet")
+		if len(args.Files) != 0 {
+			return parseResult{}, errors.New("--clipboard cannot be combined with a file")
+		}
+		switch *args.Clipboard {
+		case "wl-copy", "xclip", "xsel":
+		case "auto":
+			return parseResult{}, errors.New("--clipboard auto is not available yet")
+		default:
+			return parseResult{}, fmt.Errorf("unsupported clipboard backend: %q", *args.Clipboard)
+		}
+
+		receiveDir := args.ReceiveDir
+		if receiveDir == "" {
+			dir, err := defaultReceiveDir()
+			if err != nil {
+				return parseResult{}, err
+			}
+			receiveDir = dir
+		}
+
+		return parseResult{
+			Request: app.Request{
+				Operation:   app.OperationReceive,
+				ReceiveDir:  receiveDir,
+				Clipboard:   *args.Clipboard,
+				NetworkMode: networkMode,
+				Lifetime:    args.Expire,
+			},
+		}, nil
 	}
 
 	switch len(args.Files) {

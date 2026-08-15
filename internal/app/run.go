@@ -157,8 +157,16 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		return err
 	}
 
+	var textSink receive.TextSink = receive.NewWriterTextSink(a.stdout)
+	if req.Clipboard != "" {
+		textSink, err = a.newClipboardSink(req.Clipboard)
+		if err != nil {
+			return fmt.Errorf("configure clipboard backend: %w", err)
+		}
+	}
+
 	textProcessor := receive.NewTextProcessor(
-		receive.NewWriterTextSink(a.stdout),
+		textSink,
 		receive.TextQueueCapacity,
 	)
 	defer textProcessor.Close()

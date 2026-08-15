@@ -184,6 +184,55 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 	}
 }
 
+func TestApplicationRunReceiveModeUsesClipboardSink(t *testing.T) {
+	var clipboard bytes.Buffer
+	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
+	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
+	application.advertiseAddress = func() (netip.Addr, error) {
+		return netip.MustParseAddr("192.0.2.10"), nil
+	}
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+			return receive.Result{}, nil
+		}), nil
+	}
+	var selectedBackend string
+	application.newClipboardSink = func(backend string) (receive.TextSink, error) {
+		selectedBackend = backend
+		return receive.NewWriterTextSink(&clipboard), nil
+	}
+	application.newReceiveServer = func(_ *session.Session, _ receiveStore, submitter textSubmitter) sessionServer {
+		text, err := share.NewText([]byte("clipboard value"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := submitter.Submit(context.Background(), text); err != nil {
+			t.Fatal(err)
+		}
+		return fake
+	}
+	application.renderQR = func(io.Writer, string) error { return nil }
+
+	cause := errors.New("stop clipboard test")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	err := application.Run(ctx, Request{
+		Operation:  OperationReceive,
+		ReceiveDir: "/receive",
+		Clipboard:  "xclip",
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, cause) {
+		t.Fatalf("Run() error = %v, want cancellation cause", err)
+	}
+	if selectedBackend != "xclip" {
+		t.Errorf("selected backend = %q, want xclip", selectedBackend)
+	}
+	if got := clipboard.String(); got != "clipboard value" {
+		t.Errorf("clipboard sink = %q, want clipboard value", got)
+	}
+}
+
 func TestApplicationRunTextSendMode(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}

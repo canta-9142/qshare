@@ -65,8 +65,8 @@ Tasks:
 * [x] browser text submission
 * [x] 1 MiB text limits
 * [x] serialized per-submission handling
-* [ ] `--clipboard BACKEND`
-* [ ] Linux clipboard backends (`wl-copy`, `xclip`, and `xsel`)
+* [x] `--clipboard BACKEND`
+* [x] Linux clipboard backends (`wl-copy`, `xclip`, and `xsel`)
 * [ ] automatic clipboard-backend selection
 * [ ] text-sharing security tests
 
