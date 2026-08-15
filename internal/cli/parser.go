@@ -19,6 +19,15 @@ type parseResult struct {
 }
 
 func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
+	return parseWithInput(argv, stdinInput{terminal: true}, stdout, stderr)
+}
+
+type stdinInput struct {
+	reader   io.Reader
+	terminal bool
+}
+
+func parseWithInput(argv []string, stdin stdinInput, stdout io.Writer, stderr io.Writer) (parseResult, error) {
 	var args arguments
 
 	parser, err := arg.NewParser(arg.Config{
@@ -47,10 +56,14 @@ func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, erro
 		}, nil
 	}
 
-	return mapArguments(args)
+	return mapArgumentsWithInput(args, stdin)
 }
 
 func mapArguments(args arguments) (parseResult, error) {
+	return mapArgumentsWithInput(args, stdinInput{terminal: true})
+}
+
+func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error) {
 	if args.Expire <= 0 {
 		return parseResult{}, errors.New("session lifetime must be greater than zero")
 	}
@@ -58,6 +71,37 @@ func mapArguments(args arguments) (parseResult, error) {
 	networkMode := app.NetworkAuto
 	if args.LAN {
 		networkMode = app.NetworkLAN
+	}
+
+	if !stdin.terminal {
+		switch {
+		case len(args.Files) != 0:
+			return parseResult{}, errors.New("piped stdin cannot be combined with a file")
+		case args.Text != nil:
+			return parseResult{}, errors.New("piped stdin cannot be combined with --text")
+		case args.Clipboard != nil:
+			return parseResult{}, errors.New("piped stdin cannot be combined with --clipboard")
+		case args.ReceiveDir != "":
+			return parseResult{}, errors.New("piped stdin cannot be combined with --receive-dir")
+		}
+
+		value, err := io.ReadAll(io.LimitReader(stdin.reader, share.MaxTextSize+1))
+		if err != nil {
+			return parseResult{}, fmt.Errorf("read text from stdin: %w", err)
+		}
+		text, err := share.NewText(value)
+		if err != nil {
+			return parseResult{}, fmt.Errorf("invalid stdin text: %w", err)
+		}
+
+		return parseResult{
+			Request: app.Request{
+				Operation:   app.OperationSendText,
+				Text:        text,
+				NetworkMode: networkMode,
+				Lifetime:    args.Expire,
+			},
+		}, nil
 	}
 
 	if args.Text != nil {
@@ -81,6 +125,10 @@ func mapArguments(args arguments) (parseResult, error) {
 				Lifetime:    args.Expire,
 			},
 		}, nil
+	}
+
+	if args.Clipboard != nil {
+		return parseResult{}, errors.New("--clipboard is not available yet")
 	}
 
 	switch len(args.Files) {

@@ -88,13 +88,13 @@ destination.
 
 ### Share text
 
-Planned for v0.3; these commands are not implemented yet:
+Share UTF-8 text from stdin:
 
 ```sh
 printf 'hello\n' | qshare
 ```
 
-or:
+Or supply it explicitly:
 
 ```sh
 qshare --text "hello"

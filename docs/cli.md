@@ -237,13 +237,13 @@ Receive:
 qshare
 ```
 
-Share piped text, planned:
+Share piped text:
 
 ```sh
 printf 'hello\n' | qshare
 ```
 
-Share explicit text, planned for v0.3:
+Share explicit text:
 
 ```sh
 qshare --text "hello"

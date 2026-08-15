@@ -2,13 +2,162 @@ package cli
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/app"
+	"github.com/canta-9142/qshare/internal/share"
 )
+
+func TestMapArgumentsSelectsPipedStdinText(t *testing.T) {
+	want := "hello, 世界\n"
+	result, err := mapArgumentsWithInput(arguments{Expire: time.Minute}, stdinInput{
+		reader: strings.NewReader(want),
+	})
+	if err != nil {
+		t.Fatalf("mapArgumentsWithInput() error = %v", err)
+	}
+	if result.Request.Operation != app.OperationSendText {
+		t.Errorf("Operation = %v, want OperationSendText", result.Request.Operation)
+	}
+	if got := result.Request.Text.String(); got != want {
+		t.Errorf("Text = %q, want %q", got, want)
+	}
+}
+
+func TestMapArgumentsAcceptsStdinAtSizeLimit(t *testing.T) {
+	want := strings.Repeat("x", 1<<20)
+	result, err := mapArgumentsWithInput(arguments{Expire: time.Minute}, stdinInput{
+		reader: strings.NewReader(want),
+	})
+	if err != nil {
+		t.Fatalf("mapArgumentsWithInput() error = %v", err)
+	}
+	if got := result.Request.Text.String(); got != want {
+		t.Fatal("stdin text at size limit was not preserved")
+	}
+}
+
+func TestMapArgumentsRejectsInvalidPipedStdin(t *testing.T) {
+	tests := []struct {
+		name   string
+		reader io.Reader
+		want   error
+	}{
+		{
+			name:   "over size limit",
+			reader: strings.NewReader(strings.Repeat("x", 1<<20+1)),
+			want:   share.ErrTextTooLarge,
+		},
+		{
+			name:   "invalid UTF-8",
+			reader: bytes.NewReader([]byte{0xff}),
+			want:   share.ErrTextInvalidUTF8,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := mapArgumentsWithInput(arguments{Expire: time.Minute}, stdinInput{reader: tt.reader})
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("mapArgumentsWithInput() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestMapArgumentsReadsAtMostSizeLimitPlusOne(t *testing.T) {
+	reader := &countingReader{remaining: 1<<20 + 100}
+	_, err := mapArgumentsWithInput(arguments{Expire: time.Minute}, stdinInput{reader: reader})
+	if !errors.Is(err, share.ErrTextTooLarge) {
+		t.Fatalf("mapArgumentsWithInput() error = %v, want ErrTextTooLarge", err)
+	}
+	if reader.read != 1<<20+1 {
+		t.Fatalf("stdin bytes read = %d, want %d", reader.read, 1<<20+1)
+	}
+}
+
+func TestMapArgumentsRejectsPipedStdinConflicts(t *testing.T) {
+	text := "explicit"
+	clipboard := "auto"
+	tests := []struct {
+		name string
+		args arguments
+	}{
+		{name: "file", args: arguments{Expire: time.Minute, Files: []string{"file.txt"}}},
+		{name: "text", args: arguments{Expire: time.Minute, Text: &text}},
+		{name: "clipboard", args: arguments{Expire: time.Minute, Clipboard: &clipboard}},
+		{name: "receive directory", args: arguments{Expire: time.Minute, ReceiveDir: "/tmp/received"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := mapArgumentsWithInput(tt.args, stdinInput{reader: strings.NewReader("piped")}); err == nil {
+				t.Fatal("mapArgumentsWithInput() error = nil, want conflict error")
+			}
+		})
+	}
+}
+
+func TestPipedStdinConflictExitsWithUsageStatus(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"file.txt"},
+		strings.NewReader("piped"),
+		false,
+		&stdout,
+		&stderr,
+	)
+	if code != 2 {
+		t.Fatalf("runWithInput() = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "piped stdin") {
+		t.Errorf("stderr = %q, want conflict diagnostic", stderr.String())
+	}
+}
+
+func TestParseHelpDoesNotReadPipedStdin(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	result, err := parseWithInput(
+		[]string{"--help"},
+		stdinInput{reader: errorReader{}},
+		&stdout,
+		&stderr,
+	)
+	if err != nil || !result.Exit || result.Code != 0 {
+		t.Fatalf("parseWithInput() result=%+v error=%v, want help exit", result, err)
+	}
+}
+
+type countingReader struct {
+	remaining int
+	read      int
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	if r.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := min(len(p), r.remaining)
+	for i := range p[:n] {
+		p[i] = 'x'
+	}
+	r.remaining -= n
+	r.read += n
+	return n, nil
+}
+
+type errorReader struct{}
+
+func (errorReader) Read([]byte) (int, error) {
+	return 0, errors.New("unexpected read")
+}
 
 func TestParseMapsArguments(t *testing.T) {
 	tests := []struct {
