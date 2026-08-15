@@ -45,8 +45,8 @@ func TestParseMapsArguments(t *testing.T) {
 			if result.Exit {
 				t.Fatalf("parse() Exit = true, code %d", result.Code)
 			}
-			if result.Request.Operation != app.OperationSend {
-				t.Errorf("Operation = %v, want OperationSend", result.Request.Operation)
+			if result.Request.Operation != app.OperationSendFile {
+				t.Errorf("Operation = %v, want OperationSendFile", result.Request.Operation)
 			}
 			if result.Request.Path != tt.wantPath {
 				t.Errorf("Path = %q, want %q", result.Request.Path, tt.wantPath)
@@ -62,6 +62,83 @@ func TestParseMapsArguments(t *testing.T) {
 			}
 			if stderr.Len() != 0 {
 				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
+func TestMapArgumentsSelectsTextSendMode(t *testing.T) {
+	value := "hello, 世界"
+	result, err := mapArguments(arguments{
+		Expire: time.Minute,
+		Text:   &value,
+	})
+	if err != nil {
+		t.Fatalf("mapArguments() error = %v", err)
+	}
+	if result.Request.Operation != app.OperationSendText {
+		t.Errorf("Operation = %v, want OperationSendText", result.Request.Operation)
+	}
+	if got := result.Request.Text.String(); got != value {
+		t.Errorf("Text = %q, want %q", got, value)
+	}
+}
+
+func TestParseTextOption(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	result, err := parse([]string{"--text", "hello"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("parse() error = %v", err)
+	}
+	if result.Exit {
+		t.Fatalf("parse() Exit = true, code %d", result.Code)
+	}
+	if result.Request.Operation != app.OperationSendText || result.Request.Text.String() != "hello" {
+		t.Fatalf("Request = %+v, want text send request", result.Request)
+	}
+}
+
+func TestRunRejectsInvalidTextAsUsageError(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if got := Run([]string{"--text", strings.Repeat("x", 1<<20+1)}, &stdout, &stderr); got != 2 {
+		t.Fatalf("Run() = %d, want 2", got)
+	}
+	if !strings.Contains(stderr.String(), "1 MiB") {
+		t.Errorf("stderr = %q, want size-limit diagnostic", stderr.String())
+	}
+}
+
+func TestMapArgumentsAcceptsEmptyExplicitText(t *testing.T) {
+	value := ""
+	result, err := mapArguments(arguments{Expire: time.Minute, Text: &value})
+	if err != nil {
+		t.Fatalf("mapArguments() error = %v", err)
+	}
+	if result.Request.Operation != app.OperationSendText {
+		t.Errorf("Operation = %v, want OperationSendText", result.Request.Operation)
+	}
+}
+
+func TestMapArgumentsRejectsInvalidTextRequests(t *testing.T) {
+	valid := "text"
+	invalidUTF8 := string([]byte{0xff})
+	oversized := strings.Repeat("x", 1<<20+1)
+	tests := []struct {
+		name string
+		args arguments
+	}{
+		{name: "text with file", args: arguments{Expire: time.Minute, Text: &valid, Files: []string{"file.txt"}}},
+		{name: "text with receive directory", args: arguments{Expire: time.Minute, Text: &valid, ReceiveDir: "/tmp/received"}},
+		{name: "invalid UTF-8", args: arguments{Expire: time.Minute, Text: &invalidUTF8}},
+		{name: "oversized", args: arguments{Expire: time.Minute, Text: &oversized}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := mapArguments(tt.args); err == nil {
+				t.Fatal("mapArguments() error = nil, want error")
 			}
 		})
 	}

@@ -38,6 +38,7 @@ type Application struct {
 	stderr           io.Writer
 	advertiseAddress func() (netip.Addr, error)
 	newSendServer    func(*session.Session) sessionServer
+	newTextServer    func(*session.Session) sessionServer
 	newReceiveServer func(*session.Session, receiveStore) sessionServer
 	openReceiveStore func(string) (receiveStore, error)
 	renderQR         func(io.Writer, string) error
@@ -51,7 +52,8 @@ func New(deps Dependencies) *Application {
 	return &Application{
 		stderr:           deps.Stderr,
 		advertiseAddress: network.AdvertiseAddress,
-		newSendServer:    func(s *session.Session) sessionServer { return server.NewSend(s) },
+		newSendServer:    func(s *session.Session) sessionServer { return server.NewSendFile(s) },
+		newTextServer:    func(s *session.Session) sessionServer { return server.NewSendText(s) },
 		newReceiveServer: func(s *session.Session, store receiveStore) sessionServer {
 			return server.NewReceive(s, store)
 		},

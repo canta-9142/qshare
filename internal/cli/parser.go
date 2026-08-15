@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/canta-9142/qshare/internal/app"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 type parseResult struct {
@@ -59,6 +60,29 @@ func mapArguments(args arguments) (parseResult, error) {
 		networkMode = app.NetworkLAN
 	}
 
+	if args.Text != nil {
+		if len(args.Files) != 0 {
+			return parseResult{}, errors.New("--text cannot be combined with a file")
+		}
+		if args.ReceiveDir != "" {
+			return parseResult{}, errors.New("--receive-dir cannot be used when sharing text")
+		}
+
+		text, err := share.NewText([]byte(*args.Text))
+		if err != nil {
+			return parseResult{}, fmt.Errorf("invalid --text value: %w", err)
+		}
+
+		return parseResult{
+			Request: app.Request{
+				Operation:   app.OperationSendText,
+				Text:        text,
+				NetworkMode: networkMode,
+				Lifetime:    args.Expire,
+			},
+		}, nil
+	}
+
 	switch len(args.Files) {
 	case 0:
 		receiveDir := args.ReceiveDir
@@ -86,7 +110,7 @@ func mapArguments(args arguments) (parseResult, error) {
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationSend,
+				Operation:   app.OperationSendFile,
 				Path:        args.Files[0],
 				NetworkMode: networkMode,
 				Lifetime:    args.Expire,

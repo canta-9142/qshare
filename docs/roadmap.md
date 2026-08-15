@@ -61,7 +61,7 @@ Goal:
 Tasks:
 
 * [ ] stdin text sharing
-* [ ] explicit `--text TEXT`
+* [x] explicit `--text TEXT`
 * [ ] browser text submission
 * [ ] 1 MiB text limits
 * [ ] serialized per-submission handling

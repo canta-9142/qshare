@@ -15,6 +15,7 @@ import (
 
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 func TestApplicationRunExpiration(t *testing.T) {
@@ -165,6 +166,57 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 		t.Errorf("QR payload = %q", qrPayload)
 	}
 	if got := stderr.String(); !strings.Contains(got, "Receiving into "+receiveDir) {
+		t.Errorf("stderr = %q", got)
+	}
+	if fake.closeCalls != 1 {
+		t.Errorf("Close() calls = %d, want 1", fake.closeCalls)
+	}
+}
+
+func TestApplicationRunTextSendMode(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
+	application := New(Dependencies{Stderr: stderr})
+	application.advertiseAddress = func() (netip.Addr, error) {
+		return netip.MustParseAddr("192.0.2.10"), nil
+	}
+
+	text, err := share.NewText([]byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var serverText string
+	application.newTextServer = func(sess *session.Session) sessionServer {
+		got, ok := sess.Text()
+		if ok {
+			serverText = got.String()
+		}
+		return fake
+	}
+	var qrPayload string
+	application.renderQR = func(_ io.Writer, payload string) error {
+		qrPayload = payload
+		return nil
+	}
+
+	cause := errors.New("stop text test")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	err = application.Run(ctx, Request{
+		Operation: OperationSendText,
+		Text:      text,
+		Lifetime:  time.Hour,
+	})
+	if !errors.Is(err, cause) {
+		t.Fatalf("Run() error = %v, want cancellation cause", err)
+	}
+	if serverText != "hello" {
+		t.Errorf("server text = %q, want hello", serverText)
+	}
+	if qrPayload == "" || !strings.HasPrefix(qrPayload, "http://192.0.2.10:55544/s/") {
+		t.Errorf("QR payload = %q", qrPayload)
+	}
+	if got := stderr.String(); !strings.Contains(got, "Sharing text") {
 		t.Errorf("stderr = %q", got)
 	}
 	if fake.closeCalls != 1 {

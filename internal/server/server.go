@@ -28,12 +28,20 @@ type Server struct {
 	now                  func() time.Time
 }
 
-func NewSend(sess *session.Session) *Server {
+func NewSendFile(sess *session.Session) *Server {
 	server := newServer(sess)
 
 	server.mux.HandleFunc("GET /s/{token}", server.downloadPage)
 	server.mux.HandleFunc("GET /d/{token}", server.download)
 	server.mux.HandleFunc("HEAD /d/{token}", server.download)
+
+	return server
+}
+
+func NewSendText(sess *session.Session) *Server {
+	server := newServer(sess)
+
+	server.mux.HandleFunc("GET /s/{token}", server.textPage)
 
 	return server
 }
