@@ -135,10 +135,7 @@ Tasks:
 
 Tasks:
 
-* [ ] publish Linux release artifacts
-* [ ] Ubuntu Launchpad PPA
-* [ ] Fedora COPR
-* [ ] Arch User Repository (AUR)
+* [ ] publish to Open Build Service
 * [ ] Nix flakes
 
 ## v1+: Additional platforms and distribution
