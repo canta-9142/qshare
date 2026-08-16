@@ -155,7 +155,13 @@ qshare_0.1.0_darwin_arm64.tar.gz
 
 Binary archives remain canonical.
 
-Convenience distribution may later include:
+The Open Build Service package uses `qshare.spec` for RPM distributions and
+`qshare.dsc` together with the flat `debian.*` files for Debian distributions.
+Both recipes consume the same source archive and the `vendor.tar.gz` generated
+by the `go_modules` source service, so package builds do not need network
+access. Debian builds require Go 1.24 or newer.
+
+Convenience distribution may also include:
 
 * Nix package / flake;
 * Homebrew;
