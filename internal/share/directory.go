@@ -36,6 +36,7 @@ type Node struct {
 	identity fileIdentity
 	children []*Node
 	parent   *Node
+	pinned   *os.File
 }
 
 func (n *Node) ID() ResourceID     { return n.id }
@@ -161,7 +162,11 @@ func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *
 				unix.Close(fd)
 				return fmt.Errorf("directory contains too many regular files: maximum is %d", MaxDirectoryFiles)
 			}
-			unix.Close(fd)
+			node.pinned = os.NewFile(uintptr(fd), name)
+			if node.pinned == nil {
+				unix.Close(fd)
+				return errors.New("create pinned file handle")
+			}
 		} else {
 			node.kind = NodeDirectory
 			child := os.NewFile(uintptr(fd), name)
@@ -301,5 +306,14 @@ func (d *Directory) Close() error {
 	if d == nil || d.root == nil {
 		return nil
 	}
-	return d.root.Close()
+	var err error
+	for _, node := range d.byID {
+		if node.pinned != nil {
+			err = errors.Join(err, node.pinned.Close())
+			node.pinned = nil
+		}
+	}
+	err = errors.Join(err, d.root.Close())
+	d.root = nil
+	return err
 }
