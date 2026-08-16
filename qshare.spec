@@ -10,10 +10,10 @@ License:        MIT
 URL:            https://github.com/canta-9142/qshare
 ExclusiveArch:  x86_64 aarch64
 %if 0%{?suse_version}
-BuildRequires:  golang(API) >= 1.26
-BuildRequires:  go >= 1.26.5
+BuildRequires:  golang(API) >= 1.25
+BuildRequires:  go >= 1.25
 %else
-BuildRequires:  golang >= 1.26.5
+BuildRequires:  golang >= 1.25
 %endif
 
 %description
@@ -28,15 +28,15 @@ cp -a %{_sourcedir}/internal .
 cp -a %{_sourcedir}/go.mod %{_sourcedir}/go.sum .
 
 %build
-export GOMODCACHE=%{_sourcedir}/build-gomodcache
-export GOPROXY=off
+export CGO_ENABLED=0
+export GOPROXY=file://%{_sourcedir}/build-gomodcache
 export GOSUMDB=off
 export GOTOOLCHAIN=local
 go build -mod=readonly -trimpath -o qshare ./cmd/qshare
 
 %check
-export GOMODCACHE=%{_sourcedir}/build-gomodcache
-export GOPROXY=off
+export CGO_ENABLED=0
+export GOPROXY=file://%{_sourcedir}/build-gomodcache
 export GOSUMDB=off
 export GOTOOLCHAIN=local
 go test -mod=readonly ./...
