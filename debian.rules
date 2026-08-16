@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+
+export CGO_ENABLED := 0
+export GOPROXY := off
+export GOSUMDB := off
+export GOTOOLCHAIN := local
+
+OBS_SOURCES ?= /usr/src/packages/SOURCES
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	if [ ! -d vendor ]; then \
+		vendor_archive=$(OBS_SOURCES)/vendor.tar.gz; \
+		test -f "$$vendor_archive" || { \
+			echo "vendor archive not found: $$vendor_archive" >&2; \
+			exit 1; \
+		}; \
+		tar -xzf "$$vendor_archive"; \
+		touch .vendor-from-obs; \
+	fi
+	go build -buildvcs=false -mod=vendor -trimpath -o qshare ./cmd/qshare
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	go test -mod=vendor ./...
+endif
+
+override_dh_auto_install:
+	install -D -m 0755 qshare $(CURDIR)/debian/qshare/usr/bin/qshare
+
+override_dh_installdocs:
+	dh_installdocs README.md
+
+override_dh_auto_clean:
+	rm -f qshare
+	if [ -f .vendor-from-obs ]; then rm -rf vendor .vendor-from-obs; fi

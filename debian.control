@@ -1,0 +1,17 @@
+Source: qshare
+Section: net
+Priority: optional
+Maintainer: Kanta Imai <work@floating-gate.com>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 1.24)
+Standards-Version: 4.7.2
+Homepage: https://github.com/canta-9142/qshare
+Rules-Requires-Root: no
+
+Package: qshare
+Architecture: amd64 arm64
+Depends: ${misc:Depends}
+Suggests: wl-clipboard | xclip | xsel
+Description: Local file sharing with browser-capable devices
+ qshare exchanges files and text with smartphones and other browser-capable
+ devices over a local network. It does not require cloud storage, an account,
+ or a dedicated receiving application.

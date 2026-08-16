@@ -6,6 +6,11 @@
     <param name="filename">qshare</param>
     <param name="versionformat">0.5.0</param>
     <param name="extract">qshare.spec</param>
+    <param name="extract">qshare.dsc</param>
+    <param name="extract">debian.changelog</param>
+    <param name="extract">debian.control</param>
+    <param name="extract">debian.copyright</param>
+    <param name="extract">debian.rules</param>
   </service>
   <service name="go_modules"/>
   <service name="tar" mode="buildtime"/>
