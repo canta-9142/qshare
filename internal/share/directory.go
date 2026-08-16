@@ -35,6 +35,7 @@ type Node struct {
 	rel      []string
 	identity fileIdentity
 	children []*Node
+	parent   *Node
 }
 
 func (n *Node) ID() ResourceID     { return n.id }
@@ -43,6 +44,7 @@ func (n *Node) Kind() NodeKind     { return n.kind }
 func (n *Node) Size() int64        { return n.size }
 func (n *Node) ModTime() time.Time { return n.modTime }
 func (n *Node) Children() []*Node  { return append([]*Node(nil), n.children...) }
+func (n *Node) Parent() *Node      { return n.parent }
 
 type fileIdentity struct{ dev, ino uint64 }
 
@@ -137,7 +139,7 @@ func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *
 			unix.Close(fd)
 			return err
 		}
-		node := &Node{id: id, name: name, rel: append(append([]string(nil), parent.rel...), name), identity: identityOf(&stat), size: stat.Size, modTime: time.Unix(stat.Mtim.Sec, stat.Mtim.Nsec)}
+		node := &Node{id: id, name: name, rel: append(append([]string(nil), parent.rel...), name), identity: identityOf(&stat), size: stat.Size, modTime: time.Unix(stat.Mtim.Sec, stat.Mtim.Nsec), parent: parent}
 		if mode == unix.S_IFREG {
 			node.kind = NodeFile
 			*files++
