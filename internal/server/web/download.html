@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>{{.FileName}} - Qshare</title>
+  <title>Shared files - Qshare</title>
 
   <style>
     :root {
@@ -86,14 +86,17 @@
 
 <body>
   <main>
-    <h1>Download a file</h1>
+    <h1>Shared files</h1>
 
+    {{range .Files}}
     <section class="file">
-      <p class="file-name">{{.FileName}}</p>
-      <p class="file-size">{{.FileSize}}</p>
-      <a href="{{.DownloadURL}}" class="download">Download</a>
-      <p class="notice">This file is available temporarily.</p>
+      <p class="file-name">{{.Name}}</p>
+      <p class="file-size">{{.Size}}</p>
+      <a href="{{.URL}}" class="download">Download</a>
     </section>
+    {{end}}
+    <a href="{{.ArchiveURL}}" class="download">Download all as ZIP</a>
+    <p class="notice">These files are available temporarily.</p>
   </main>
 </body>
 </html>

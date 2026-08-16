@@ -11,15 +11,19 @@ The CLI should remain predictable before it becomes clever.
 ## 2. Send mode
 
 ```sh
-qshare FILE
+qshare FILE...
 ```
 
-shares a file.
+shares one or more files. Send mode accepts at most 100 positional file
+arguments. The limit keeps the browser list practical and bounds validation,
+open-file, and session-metadata costs. Supplying more than 100 files is a usage
+error, produces exit status `2`, and is rejected before any file is opened or
+a session is created.
 
-Phase 1 also supports an explicit session lifetime:
+An explicit session lifetime may be selected with:
 
 ```sh
-qshare --expire DURATION FILE
+qshare --expire DURATION FILE...
 ```
 
 `DURATION` uses Go duration syntax, such as `30s`, `10m`, or `1h30m`, and must
@@ -30,13 +34,20 @@ Phase 1 listens on TCP port `55544`. If a host firewall blocks inbound LAN
 connections, the user must permit that port separately. qshare does not modify
 firewall rules in Phase 1.
 
-Later:
+Files are displayed in the same order as their positional arguments. Files
+with the same base name are accepted and remain separate downloadable items.
+Remote URLs identify each file with an opaque resource ID that is independent
+of, and does not expose, its local path or filename.
 
-```sh
-qshare FILE...
-```
+The authenticated browser page also offers an on-demand ZIP containing all
+files in CLI order. Duplicate names use `name (1).ext`, `name (2).ext`, and so
+on, selecting the first unused name. ZIP output is streamed and is not staged
+in a temporary file.
 
-shares multiple files.
+qshare validates every positional file before it creates a session, starts the
+server, or prints the QR code and access information. If any file is invalid,
+the command fails without sharing the valid subset. Resources opened while
+validating the selection are closed on failure.
 
 ## 3. Receive mode
 
@@ -182,8 +193,8 @@ semantics of `--once` are not yet defined.
 Phase 1 supports:
 
 ```sh
-qshare --lan FILE
-qshare --expire DURATION FILE
+qshare --lan FILE...
+qshare --expire DURATION FILE...
 ```
 
 `--lan` explicitly requests LAN behavior.
@@ -229,6 +240,12 @@ Send:
 
 ```sh
 qshare photo.jpg
+```
+
+Send multiple files, preserving the specified display order:
+
+```sh
+qshare front/photo.jpg back/photo.jpg notes.txt
 ```
 
 Receive:

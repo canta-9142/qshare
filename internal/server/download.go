@@ -3,6 +3,8 @@ package server
 import (
 	"mime"
 	"net/http"
+
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
@@ -12,12 +14,11 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.session.Authorize(token, s.now()) {
+	resource, ok := s.session.Resolve(token, share.ResourceID(r.PathValue("resource")), s.now())
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-
-	resource := s.session.Resource()
 
 	w.Header().Set(
 		"Content-Disposition",

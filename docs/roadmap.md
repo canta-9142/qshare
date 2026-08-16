@@ -80,15 +80,20 @@ Goal:
 
 Tasks:
 
-* [ ] accept multiple positional file arguments
-* [ ] validate the complete file set before starting a session
-* [ ] represent shared files as an explicit resource collection
-* [ ] assign opaque resource IDs independent of local paths and filenames
-* [ ] display the shared file list in the browser
-* [ ] support individual file downloads
-* [ ] support files with duplicate base names
-* [ ] define and enforce a shared-file count limit
-* [ ] add multiple-file security and HTTP tests
+* [x] define a maximum of 100 shared files and reject larger selections before
+  opening files or creating a session
+* [x] define CLI-order preservation and duplicate-base-name behavior
+* [x] define opaque resource IDs independent of paths and filenames
+* [x] define all-or-nothing validation before session startup
+* [x] accept multiple positional file arguments
+* [x] validate the complete file set before starting a session
+* [x] represent shared files as an explicit resource collection
+* [x] assign opaque resource IDs independent of local paths and filenames
+* [x] display the shared file list in the browser
+* [x] support individual file downloads
+* [x] support files with duplicate base names
+* [x] enforce the shared-file count limit
+* [x] add multiple-file security and HTTP tests
 
 ### Archive download
 
@@ -98,11 +103,11 @@ Goal:
 
 Tasks:
 
-* [ ] stream ZIP generation without buffering the archive or creating a
+* [x] stream ZIP generation without buffering the archive or creating a
   temporary ZIP file
-* [ ] define collision handling for names inside the archive
-* [ ] stop archive generation when the request is cancelled
-* [ ] add archive security and streaming tests
+* [x] define collision handling for names inside the archive
+* [x] stop archive generation when the request is cancelled
+* [x] add archive security and streaming tests
 
 ## v0.5
 

@@ -74,6 +74,21 @@ resource ID → validated local resource
 
 Client requests resolve resource IDs, not filesystem paths.
 
+For multiple-file send sessions, each resource ID must be opaque and generated
+independently of the resource's local path and filename. Duplicate base names
+must not cause resources to share an ID or overwrite one another in the
+resource map.
+
+ZIP entry names are derived only from validated resource base names, never
+from a client-controlled path. They must not contain directory components.
+Duplicate entry names are made unique without dropping or overwriting files.
+
+Send mode accepts at most 100 files. The count must be checked before opening
+any selected file. qshare must then validate the complete ordered selection
+before creating a session, starting the HTTP server, or displaying access
+information. If any selected file fails validation, no partial session may be
+made available and every resource acquired during validation must be closed.
+
 ## 7. Directory traversal
 
 Requests such as:
@@ -193,6 +208,12 @@ Potential limits include:
 
 Downloads of explicitly shared large files must remain supported.
 
+A send session is limited to 100 explicitly selected files. This keeps browser
+output usable and bounds validation work, open file descriptors, and
+per-session resource metadata without imposing a size limit on an explicitly
+shared file. A request above the limit must be rejected before files are opened
+or session state is allocated.
+
 ## 14. Browser content
 
 Filenames and user-provided text displayed in HTML must be escaped.
@@ -220,6 +241,12 @@ At minimum, send mode must have automated tests for:
 * traversal attempts;
 * encoded traversal attempts;
 * expiration.
+
+Multiple-file send-mode tests must additionally cover the exact 100-file
+boundary, rejection above it before files are opened, preservation of CLI
+order, duplicate base names as distinct resources, opaque IDs that do not
+expose paths or filenames, and all-or-nothing validation with cleanup after an
+intermediate failure.
 
 Before receive-mode security testing is considered complete, automated tests
 must cover:

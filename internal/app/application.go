@@ -45,6 +45,7 @@ type Application struct {
 	newReceiveServer func(*session.Session, receiveStore, textSubmitter) sessionServer
 	openReceiveStore func(string) (receiveStore, error)
 	newClipboardSink func(string) (receive.TextSink, error)
+	openCollection   func([]string) (*share.Collection, error)
 	renderQR         func(io.Writer, string) error
 }
 
@@ -77,6 +78,7 @@ func New(deps Dependencies) *Application {
 		newClipboardSink: func(backend string) (receive.TextSink, error) {
 			return clipboard.NewSink(backend)
 		},
-		renderQR: qr.Render,
+		openCollection: share.OpenCollection,
+		renderQR:       qr.Render,
 	}
 }
