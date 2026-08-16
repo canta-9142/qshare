@@ -154,7 +154,7 @@ func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *
 			unix.Close(fd)
 			return err
 		}
-		node := &Node{id: id, name: name, rel: append(append([]string(nil), parent.rel...), name), identity: identityOf(&stat), size: stat.Size, modTime: time.Unix(stat.Mtim.Sec, stat.Mtim.Nsec), parent: parent}
+		node := &Node{id: id, name: name, rel: append(append([]string(nil), parent.rel...), name), identity: identityOf(&stat), size: stat.Size, modTime: time.Unix(int64(stat.Mtim.Sec), int64(stat.Mtim.Nsec)), parent: parent}
 		if mode == unix.S_IFREG {
 			node.kind = NodeFile
 			*files++
@@ -243,7 +243,7 @@ func (d *Directory) OpenFile(node *Node) (*DirectoryFile, error) {
 		unix.Close(fd)
 		return nil, errors.New("create authorized file handle")
 	}
-	return &DirectoryFile{file: f, name: node.name, size: stat.Size, modTime: time.Unix(stat.Mtim.Sec, stat.Mtim.Nsec)}, nil
+	return &DirectoryFile{file: f, name: node.name, size: stat.Size, modTime: time.Unix(int64(stat.Mtim.Sec), int64(stat.Mtim.Nsec))}, nil
 }
 
 func (d *Directory) VerifyDirectory(node *Node) error {
