@@ -49,6 +49,26 @@ server, or prints the QR code and access information. If any file is invalid,
 the command fails without sharing the valid subset. Resources opened while
 validating the selection are closed on failure.
 
+Version 0.5 also accepts exactly one directory:
+
+```sh
+qshare DIRECTORY
+```
+
+A directory cannot be combined with positional files or another directory.
+The selected root must not itself be a symbolic link. qshare validates and
+freezes the complete authorized directory tree before creating the session,
+starting the server, or printing access information. Directory mode is limited
+to 1,000 regular files, 2,000 encountered entries below the root, and depth 20
+with the root at depth 0. A limit or traversal error fails the complete
+operation; qshare does not start a partial directory session.
+
+The browser provides hierarchical navigation, individual file downloads, and
+an on-demand streamed ZIP named from the shared root. Hidden entries,
+descendant symbolic links, and non-regular special files are excluded. Files or
+directories added after startup are not shared, and missing, renamed, or
+replaced authorized objects are not served.
+
 ## 3. Receive mode
 
 ```sh
@@ -246,6 +266,12 @@ Send multiple files, preserving the specified display order:
 
 ```sh
 qshare front/photo.jpg back/photo.jpg notes.txt
+```
+
+Share one directory recursively:
+
+```sh
+qshare ./photos
 ```
 
 Receive:

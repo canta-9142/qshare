@@ -120,13 +120,18 @@ This rule deliberately concerns the selected final path component. Phase 1 does
 not attempt to prohibit every symbolic link traversed while resolving ancestor
 directories.
 
-Before directory sharing is released, define whether symlinks:
+For directory sharing, the explicitly selected root itself must not be a
+symbolic link. Symbolic links encountered below the root are excluded and are
+never dereferenced or represented as downloadable entries. Symbolic links in
+ancestors of the explicitly selected root remain permitted.
 
-* are rejected;
-* are dereferenced only when their resolved target stays inside the shared root;
-* or are represented without dereferencing.
-
-Silent unrestricted traversal through symlinks is forbidden.
+The authorized directory tree is frozen at session startup. Remote requests
+resolve only opaque IDs from that tree, never client-supplied filesystem paths.
+Before serving an authorized entry, qshare must reopen it safely from the shared
+root without following symbolic links and verify that its filesystem identity
+matches the object authorized at startup. Missing, renamed, and replaced
+objects must not be served. A same-object content change is permitted because
+directory sharing freezes authorization and identity, not file bytes.
 
 The Phase 1 decision is recorded in
 [`docs/adr/0005-phase-1-file-selection.md`](adr/0005-phase-1-file-selection.md).
@@ -214,6 +219,13 @@ per-session resource metadata without imposing a size limit on an explicitly
 shared file. A request above the limit must be rejected before files are opened
 or session state is allocated.
 
+A directory-sharing walk is limited to 1,000 regular files, 2,000 encountered
+entries below the root, and depth 20 with the root at depth 0. Encountered
+entries count even when excluded, while excluded directories are not traversed.
+This bounds filesystem work and authorized-tree metadata. Directory sharing
+does not impose a per-file or aggregate byte-size limit because authorized file
+contents remain streamed.
+
 ## 14. Browser content
 
 Filenames and user-provided text displayed in HTML must be escaped.
@@ -247,6 +259,22 @@ boundary, rejection above it before files are opened, preservation of CLI
 order, duplicate base names as distinct resources, opaque IDs that do not
 expose paths or filenames, and all-or-nothing validation with cleanup after an
 intermediate failure.
+
+Before directory sharing is considered complete, automated tests must cover:
+
+* rejection of a symlink as the selected root and non-traversal of descendant
+  symlinks, including links whose targets remain inside the root;
+* exclusion of hidden and special entries without descending into them;
+* all-or-nothing startup on walk, metadata, and permission errors;
+* exact file-count, encountered-entry, and depth boundaries;
+* opaque node IDs, cross-session IDs, invalid and expired tokens, and raw and
+  encoded traversal attempts;
+* additions after startup remaining unavailable and missing, renamed, or
+  replaced objects not being served;
+* HTML escaping and non-disclosure of absolute local paths;
+* safe individual GET, HEAD, Range, retry, and concurrent downloads;
+* ZIP entry traversal prevention, hierarchy and empty-directory preservation,
+  incremental streaming, filesystem changes, and request cancellation.
 
 Before receive-mode security testing is considered complete, automated tests
 must cover:

@@ -120,10 +120,11 @@ Goal:
 
 Tasks:
 
-* [ ] define directory traversal and browser navigation behavior
-* [ ] define handling for symlinks, hidden files, and filesystem changes during
+* [x] define directory traversal and browser navigation behavior
+* [x] define handling for symlinks, hidden files, and filesystem changes during
   a session
-* [ ] define and enforce file-count and directory-depth limits
+* [x] define file-count, encountered-entry, and directory-depth limits
+* [ ] enforce file-count, encountered-entry, and directory-depth limits
 * [ ] validate and freeze the authorized resource tree when the session starts
 * [ ] browse shared directories in the browser
 * [ ] download individual files from a shared directory
