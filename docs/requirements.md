@@ -1,6 +1,6 @@
 # qshare Requirements
 
-Version: 0.4 Draft
+Version: 0.5 Draft
 
 ## 1. Overview
 

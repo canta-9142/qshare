@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestOpenDirectoryFreezesFilteredOrderedTree(t *testing.T) {
@@ -18,6 +20,9 @@ func TestOpenDirectoryFreezesFilteredOrderedTree(t *testing.T) {
 	mustMkdir(t, filepath.Join(root, ".hidden-dir"))
 	mustWrite(t, filepath.Join(root, ".hidden-dir", "secret"), "secret")
 	if err := os.Symlink(filepath.Join(root, "a.txt"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mkfifo(filepath.Join(root, "pipe"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(root, "fifo-parent"), 0o700); err != nil {
@@ -88,6 +93,25 @@ func TestDirectoryOpenFileRejectsReplacementAndNewFiles(t *testing.T) {
 	}
 }
 
+func TestDirectoryRejectsRenamedRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "root")
+	mustMkdir(t, root)
+	mustWrite(t, filepath.Join(root, "file"), "x")
+	d, err := OpenDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	node := d.Root().Children()[0]
+	if err := os.Rename(root, filepath.Join(parent, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.OpenFile(node); err == nil {
+		t.Fatal("OpenFile() accepted renamed root")
+	}
+}
+
 func TestOpenDirectoryDepthBoundary(t *testing.T) {
 	root := t.TempDir()
 	current := root
@@ -113,6 +137,16 @@ func TestOpenDirectoryFileLimit(t *testing.T) {
 	}
 	if _, err := OpenDirectory(root); err == nil {
 		t.Fatal("file count above limit accepted")
+	}
+}
+
+func TestOpenDirectoryEntryLimitCountsExcludedEntries(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i <= MaxDirectoryEntries; i++ {
+		mustWrite(t, filepath.Join(root, fmt.Sprintf(".%04d", i)), "")
+	}
+	if _, err := OpenDirectory(root); err == nil {
+		t.Fatal("entry count above limit accepted")
 	}
 }
 

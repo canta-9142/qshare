@@ -49,9 +49,10 @@ func (n *Node) Parent() *Node      { return n.parent }
 type fileIdentity struct{ dev, ino uint64 }
 
 type Directory struct {
-	root *os.File
-	node *Node
-	byID map[ResourceID]*Node
+	root     *os.File
+	rootPath string
+	node     *Node
+	byID     map[ResourceID]*Node
 }
 
 func OpenDirectory(path string) (*Directory, error) {
@@ -75,7 +76,7 @@ func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory
 		unix.Close(fd)
 		return nil, errors.New("create shared directory handle")
 	}
-	d := &Directory{root: root, byID: make(map[ResourceID]*Node)}
+	d := &Directory{root: root, rootPath: path, byID: make(map[ResourceID]*Node)}
 	defer func() {
 		if resultErr != nil {
 			resultErr = errors.Join(resultErr, d.Close())
@@ -90,7 +91,12 @@ func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory
 	if err != nil {
 		return nil, err
 	}
-	d.node = &Node{id: rootID, name: filepath.Base(filepath.Clean(path)), kind: NodeDirectory, modTime: info.ModTime(), identity: identityOf(&stat)}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve shared directory name: %w", err)
+	}
+	d.rootPath = absPath
+	d.node = &Node{id: rootID, name: filepath.Base(absPath), kind: NodeDirectory, modTime: info.ModTime(), identity: identityOf(&stat)}
 	d.byID[rootID] = d.node
 	files, entries := 0, 0
 	if err := d.walk(root, d.node, 0, &files, &entries, makeID); err != nil {
@@ -111,7 +117,15 @@ func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *
 			return fmt.Errorf("directory contains too many entries: maximum is %d", MaxDirectoryEntries)
 		}
 		name := item.Name()
-		if strings.HasPrefix(name, ".") || item.Type()&os.ModeSymlink != 0 {
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		var observed unix.Stat_t
+		if err := unix.Fstatat(int(dir.Fd()), name, &observed, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return fmt.Errorf("stat directory entry %q: %w", name, err)
+		}
+		observedMode := uint32(observed.Mode) & unix.S_IFMT
+		if observedMode != unix.S_IFREG && observedMode != unix.S_IFDIR {
 			continue
 		}
 		fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
@@ -194,9 +208,9 @@ func (d *Directory) OpenFile(node *Node) (*DirectoryFile, error) {
 	if node == nil || node.kind != NodeFile || d.byID[node.id] != node {
 		return nil, errors.New("node is not an authorized file")
 	}
-	fd, err := unix.Dup(int(d.root.Fd()))
+	fd, err := d.openAuthorizedRoot()
 	if err != nil {
-		return nil, fmt.Errorf("duplicate shared root: %w", err)
+		return nil, err
 	}
 	for i, part := range node.rel {
 		flags := unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NOFOLLOW
@@ -225,6 +239,50 @@ func (d *Directory) OpenFile(node *Node) (*DirectoryFile, error) {
 		return nil, errors.New("create authorized file handle")
 	}
 	return &DirectoryFile{file: f, name: node.name, size: stat.Size, modTime: time.Unix(stat.Mtim.Sec, stat.Mtim.Nsec)}, nil
+}
+
+func (d *Directory) VerifyDirectory(node *Node) error {
+	if node == nil || node.kind != NodeDirectory || d.byID[node.id] != node {
+		return errors.New("node is not an authorized directory")
+	}
+	fd, err := d.openAuthorizedRoot()
+	if err != nil {
+		return err
+	}
+	for _, part := range node.rel {
+		next, openErr := unix.Openat(fd, part, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_DIRECTORY, 0)
+		unix.Close(fd)
+		if openErr != nil {
+			return fmt.Errorf("reopen authorized directory: %w", openErr)
+		}
+		fd = next
+	}
+	defer unix.Close(fd)
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		return fmt.Errorf("verify authorized directory: %w", err)
+	}
+	if uint32(stat.Mode)&unix.S_IFMT != unix.S_IFDIR || identityOf(&stat) != node.identity {
+		return errors.New("authorized directory was replaced")
+	}
+	return nil
+}
+
+func (d *Directory) openAuthorizedRoot() (int, error) {
+	fd, err := unix.Open(d.rootPath, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return -1, fmt.Errorf("reopen shared root: %w", err)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		unix.Close(fd)
+		return -1, fmt.Errorf("verify shared root: %w", err)
+	}
+	if identityOf(&stat) != d.node.identity {
+		unix.Close(fd)
+		return -1, errors.New("shared root was replaced")
+	}
+	return fd, nil
 }
 
 type DirectoryFile struct {

@@ -124,12 +124,12 @@ Tasks:
 * [x] define handling for symlinks, hidden files, and filesystem changes during
   a session
 * [x] define file-count, encountered-entry, and directory-depth limits
-* [ ] enforce file-count, encountered-entry, and directory-depth limits
-* [ ] validate and freeze the authorized resource tree when the session starts
-* [ ] browse shared directories in the browser
-* [ ] download individual files from a shared directory
-* [ ] download a shared directory as an on-demand archive
-* [ ] add directory-boundary and symlink security tests
+* [x] enforce file-count, encountered-entry, and directory-depth limits
+* [x] validate and freeze the authorized resource tree when the session starts
+* [x] browse shared directories in the browser
+* [x] download individual files from a shared directory
+* [x] download a shared directory as an on-demand archive
+* [x] add directory-boundary and symlink security tests
 
 ### distribution work
 
