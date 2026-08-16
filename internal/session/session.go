@@ -9,18 +9,21 @@ import (
 
 type Session struct {
 	token     Token
-	resource  *share.File
+	resources *share.Collection
 	text      *share.Text
 	expiresAt time.Time
 }
 
-func NewSendFile(resource *share.File, lifetime time.Duration) (*Session, error) {
+func NewSendFiles(resources *share.Collection, lifetime time.Duration) (*Session, error) {
+	if resources == nil {
+		return nil, fmt.Errorf("shared resource collection is required")
+	}
 	session, err := newSession(lifetime)
 	if err != nil {
 		return nil, err
 	}
 
-	session.resource = resource
+	session.resources = resources
 
 	return session, nil
 }
@@ -72,8 +75,16 @@ func (s *Session) Token() Token {
 	return s.token
 }
 
-func (s *Session) Resource() *share.File {
-	return s.resource
+func (s *Session) Resources() *share.Collection {
+	return s.resources
+}
+
+// Resolve authorizes a token and resource ID against the same live session.
+func (s *Session) Resolve(candidate Token, id share.ResourceID, now time.Time) (*share.File, bool) {
+	if s.resources == nil || !s.Authorize(candidate, now) {
+		return nil, false
+	}
+	return s.resources.Lookup(id)
 }
 
 func (s *Session) Text() (share.Text, bool) {

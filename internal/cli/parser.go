@@ -67,6 +67,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 	if args.Expire <= 0 {
 		return parseResult{}, errors.New("session lifetime must be greater than zero")
 	}
+	if len(args.Files) > share.MaxFiles {
+		return parseResult{}, fmt.Errorf("too many files: got %d, maximum is %d", len(args.Files), share.MaxFiles)
+	}
 
 	networkMode := app.NetworkAuto
 	if args.LAN {
@@ -180,7 +183,7 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 			},
 		}, nil
 
-	case 1:
+	default:
 		if args.ReceiveDir != "" {
 			return parseResult{}, errors.New("--receive-dir cannot be used when sharing a file")
 		}
@@ -188,14 +191,12 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		return parseResult{
 			Request: app.Request{
 				Operation:   app.OperationSendFile,
-				Path:        args.Files[0],
+				Paths:       append([]string(nil), args.Files...),
 				NetworkMode: networkMode,
 				Lifetime:    args.Expire,
 			},
 		}, nil
 
-	default:
-		return parseResult{}, errors.New("at most one file may be specified")
 	}
 }
 

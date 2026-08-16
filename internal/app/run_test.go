@@ -20,7 +20,7 @@ import (
 
 func TestApplicationRunExpiration(t *testing.T) {
 	application, fake, stderr, path := newTestApplication(t)
-	err := application.Run(context.Background(), Request{Path: path, Lifetime: time.Millisecond})
+	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Millisecond})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -37,7 +37,7 @@ func TestApplicationRunCancellation(t *testing.T) {
 	cause := errors.New("cancelled")
 	ctx, cancel := context.WithCancelCause(context.Background())
 	cancel(cause)
-	err := application.Run(ctx, Request{Path: path, Lifetime: time.Hour})
+	err := application.Run(ctx, Request{Paths: []string{path}, Lifetime: time.Hour})
 	if !errors.Is(err, cause) {
 		t.Fatalf("Run() error = %v, want cause", err)
 	}
@@ -51,7 +51,7 @@ func TestApplicationRunServerFailure(t *testing.T) {
 	serveErr := errors.New("serve failed")
 	fake.done <- serveErr
 	close(fake.done)
-	err := application.Run(context.Background(), Request{Path: path, Lifetime: time.Hour})
+	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
 	if !errors.Is(err, serveErr) {
 		t.Fatalf("Run() error = %v, want server error", err)
 	}
@@ -64,7 +64,7 @@ func TestApplicationRunClosesServerWhenQRRenderingFails(t *testing.T) {
 	application, fake, _, path := newTestApplication(t)
 	renderErr := errors.New("render failed")
 	application.renderQR = func(io.Writer, string) error { return renderErr }
-	err := application.Run(context.Background(), Request{Path: path, Lifetime: time.Hour})
+	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
 	if !errors.Is(err, renderErr) {
 		t.Fatalf("Run() error = %v, want render error", err)
 	}
@@ -78,7 +78,7 @@ func TestApplicationRunReportsStartupFailures(t *testing.T) {
 		application, _, _, path := newTestApplication(t)
 		want := errors.New("address failed")
 		application.advertiseAddress = func() (netip.Addr, error) { return netip.Addr{}, want }
-		if err := application.Run(context.Background(), Request{Path: path, Lifetime: time.Hour}); !errors.Is(err, want) {
+		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); !errors.Is(err, want) {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
@@ -86,14 +86,14 @@ func TestApplicationRunReportsStartupFailures(t *testing.T) {
 		application, fake, _, path := newTestApplication(t)
 		want := errors.New("listen failed")
 		fake.startErr = want
-		if err := application.Run(context.Background(), Request{Path: path, Lifetime: time.Hour}); !errors.Is(err, want) {
+		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); !errors.Is(err, want) {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
 	t.Run("invalid listen address", func(t *testing.T) {
 		application, fake, _, path := newTestApplication(t)
 		fake.addr = testAddr("invalid")
-		if err := application.Run(context.Background(), Request{Path: path, Lifetime: time.Hour}); err == nil {
+		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); err == nil {
 			t.Fatal("Run() error = nil")
 		}
 		if fake.closeCalls != 1 {

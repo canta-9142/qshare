@@ -38,8 +38,9 @@ func NewSendFile(sess *session.Session) *Server {
 	server := newServer(sess)
 
 	server.mux.HandleFunc("GET /s/{token}", server.downloadPage)
-	server.mux.HandleFunc("GET /d/{token}", server.download)
-	server.mux.HandleFunc("HEAD /d/{token}", server.download)
+	server.mux.HandleFunc("GET /d/{token}/{resource}", server.download)
+	server.mux.HandleFunc("HEAD /d/{token}/{resource}", server.download)
+	server.mux.HandleFunc("GET /z/{token}", server.archive)
 
 	return server
 }

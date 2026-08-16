@@ -17,7 +17,7 @@ import (
 func TestDownload(t *testing.T) {
 	server, sess := newTestServer(t, "download content")
 
-	request := httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String(), nil)
+	request := httptest.NewRequest(http.MethodGet, downloadURL(sess), nil)
 	response := httptest.NewRecorder()
 	server.server.Handler.ServeHTTP(response, request)
 
@@ -46,7 +46,7 @@ func TestDownload(t *testing.T) {
 
 func TestDownloadCanBeRetried(t *testing.T) {
 	server, sess := newTestServer(t, "download content")
-	path := "/d/" + sess.Token().String()
+	path := downloadURL(sess)
 	for attempt := 0; attempt < 2; attempt++ {
 		response := httptest.NewRecorder()
 		server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -58,7 +58,7 @@ func TestDownloadCanBeRetried(t *testing.T) {
 
 func TestDownloadHeadAndRangeRequests(t *testing.T) {
 	server, sess := newTestServer(t, "abcdef")
-	url := "/d/" + sess.Token().String()
+	url := downloadURL(sess)
 
 	t.Run("HEAD", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodHead, url, nil)
@@ -116,7 +116,7 @@ func TestDownloadHeadAndRangeRequests(t *testing.T) {
 func TestDownloadRejectsUnsupportedMethod(t *testing.T) {
 	server, sess := newTestServer(t, "secret")
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/d/"+sess.Token().String(), nil))
+	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, downloadURL(sess), nil))
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
 	}
@@ -129,7 +129,7 @@ func TestServerStartAndShutdown(t *testing.T) {
 		t.Fatalf("Start() error = %v", err)
 	}
 
-	response, err := http.Get("http://" + addr.String() + "/d/" + sess.Token().String())
+	response, err := http.Get("http://" + addr.String() + downloadURL(sess))
 	if err != nil {
 		t.Fatalf("GET error = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestServerStartAndShutdown(t *testing.T) {
 	if err := <-server.Done(); err != nil {
 		t.Fatalf("Done() error = %v", err)
 	}
-	if _, err := http.Get("http://" + addr.String() + "/d/" + sess.Token().String()); err == nil {
+	if _, err := http.Get("http://" + addr.String() + downloadURL(sess)); err == nil {
 		t.Fatal("GET after Shutdown() error = nil")
 	}
 }
@@ -175,7 +175,8 @@ func TestDownloadRejectsUnauthorizedRequests(t *testing.T) {
 		path string
 	}{
 		{name: "malformed token", path: "/d/not-a-token"},
-		{name: "different token", path: "/d/" + otherToken.String()},
+		{name: "different token", path: "/d/" + otherToken.String() + "/" + string(sess.Resources().Resources()[0].ID())},
+		{name: "unknown resource", path: "/d/" + sess.Token().String() + "/unknown"},
 		{name: "unknown route", path: "/unknown"},
 	}
 
@@ -195,11 +196,22 @@ func TestDownloadRejectsUnauthorizedRequests(t *testing.T) {
 	}
 }
 
+func TestDownloadRejectsAnotherSessionsResourceID(t *testing.T) {
+	server, sess := newTestServer(t, "first")
+	_, other := newNamedTestServer(t, "other.txt", "second")
+	path := "/d/" + sess.Token().String() + "/" + string(other.Resources().Resources()[0].ID())
+	response := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", response.Code)
+	}
+}
+
 func TestDownloadRejectsRequestAtExpirationBoundary(t *testing.T) {
 	server, sess := newTestServer(t, "secret content")
 	server.now = sess.ExpiresAt
 
-	request := httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String(), nil)
+	request := httptest.NewRequest(http.MethodGet, downloadURL(sess), nil)
 	response := httptest.NewRecorder()
 	server.server.Handler.ServeHTTP(response, request)
 
@@ -242,19 +254,18 @@ func newNamedTestServer(t *testing.T, name, content string) (*Server, *session.S
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	resource, err := share.Open(path)
+	resources, err := share.OpenCollection([]string{path})
 	if err != nil {
-		t.Fatalf("share.Open() error = %v", err)
+		t.Fatalf("share.OpenCollection() error = %v", err)
 	}
-	t.Cleanup(func() {
-		if err := resource.Close(); err != nil {
-			t.Errorf("resource.Close() error = %v", err)
-		}
-	})
-
-	sess, err := session.NewSendFile(resource, time.Hour)
+	t.Cleanup(func() { _ = resources.Close() })
+	sess, err := session.NewSendFiles(resources, time.Hour)
 	if err != nil {
-		t.Fatalf("session.New() error = %v", err)
+		t.Fatalf("session.NewSendFiles() error = %v", err)
 	}
 	return NewSendFile(sess), sess
+}
+
+func downloadURL(sess *session.Session) string {
+	return "/d/" + sess.Token().String() + "/" + string(sess.Resources().Resources()[0].ID())
 }

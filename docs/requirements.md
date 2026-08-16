@@ -1,6 +1,6 @@
 # qshare Requirements
 
-Version: 0.3 Draft
+Version: 0.4 Draft
 
 ## 1. Overview
 
@@ -183,17 +183,41 @@ session termination condition occurs.
 
 ## 7. Multiple files
 
-A later version must support:
+Version 0.4 must support:
 
 ```sh
 qshare file1 file2 file3
 ```
+
+Send mode accepts from 1 through 100 file arguments. The limit of 100 keeps
+the browser list practical while placing a clear bound on validation work,
+open file descriptors, and per-session metadata. Supplying more than 100 files
+is a CLI usage error and must be rejected before any file is opened or a
+session is created.
+
+Every selected file must be validated before qshare creates the session,
+starts the HTTP server, or displays access information. If any file is invalid,
+the entire operation must fail; qshare must not start a session containing a
+partial subset.
+
+The shared-file list must preserve positional-argument order. Files with the
+same base name are distinct shared resources and must remain individually
+downloadable. Each resource must receive an opaque ID that is independent of
+its local path and filename. Browser-visible URLs and other remote input must
+identify files by that ID and must not disclose or accept a local filesystem
+path.
 
 The browser must be able to:
 
 * inspect the shared file list;
 * download individual files;
 * download all files where an appropriate archive mechanism is available.
+
+Download-all is provided as an on-demand ZIP stream. qshare must not create a
+temporary archive or buffer the complete archive in memory. ZIP entries retain
+CLI order. If an entry name is already in use, qshare inserts ` (n)` before its
+extension, beginning with ` (1)` and increasing until the name is unique.
+Archive generation must stop when the HTTP request is cancelled.
 
 ## 8. Directory sharing
 
