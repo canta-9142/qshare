@@ -67,3 +67,19 @@ jobs:
           path: dist/qshare-linux-${{ matrix.goarch }}
           if-no-files-found: error
           retention-days: 7
+
+  nix:
+    name: Nix flake
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Evaluate all supported systems
+        run: nix flake check --all-systems --no-build
+
+      - name: Build and check
+        run: nix flake check --print-build-logs
