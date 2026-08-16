@@ -8,7 +8,7 @@ Homepage: https://github.com/canta-9142/qshare
 Rules-Requires-Root: no
 
 Package: qshare
-Architecture: amd64 arm64
+Architecture: amd64 arm64 armhf
 Depends: ${misc:Depends}
 Suggests: wl-clipboard | xclip | xsel
 Description: Local file sharing with browser-capable devices

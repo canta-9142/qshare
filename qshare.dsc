@@ -1,7 +1,7 @@
 Format: 1.0
 Source: qshare
 Binary: qshare
-Architecture: amd64 arm64
+Architecture: amd64 arm64 armhf
 Version: 0.5.0-1
 Maintainer: Kanta Imai <work@floating-gate.com>
 Homepage: https://github.com/canta-9142/qshare
