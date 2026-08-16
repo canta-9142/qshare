@@ -33,6 +33,9 @@ override_dh_auto_install:
 override_dh_installdocs:
 	dh_installdocs README.md
 
+override_dh_dwz:
+	:
+
 override_dh_auto_clean:
 	rm -f qshare
 	if [ -f .vendor-from-obs ]; then rm -rf vendor .vendor-from-obs; fi
