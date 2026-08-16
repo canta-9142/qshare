@@ -1,0 +1,52 @@
+#
+# spec file for package qshare
+#
+
+Name:           qshare
+Version:        0.5.0
+Release:        0
+Summary:        Local file sharing with browser-capable devices
+License:        MIT
+URL:            https://github.com/canta-9142/qshare
+ExclusiveArch:  x86_64 aarch64
+%if 0%{?suse_version}
+BuildRequires:  golang(API) >= 1.26
+BuildRequires:  go >= 1.26.5
+%else
+BuildRequires:  golang >= 1.26.5
+%endif
+
+%description
+qshare is a local file-sharing command-line tool. It lets a computer exchange
+files and text with a smartphone or another browser-capable device without a
+dedicated receiving application, cloud storage, or an account.
+
+%prep
+%autosetup -T -c -n %{name}-%{version}
+cp -a %{_sourcedir}/cmd .
+cp -a %{_sourcedir}/internal .
+cp -a %{_sourcedir}/go.mod %{_sourcedir}/go.sum .
+
+%build
+export GOMODCACHE=%{_sourcedir}/build-gomodcache
+export GOPROXY=off
+export GOSUMDB=off
+export GOTOOLCHAIN=local
+go build -mod=readonly -trimpath -o qshare ./cmd/qshare
+
+%check
+export GOMODCACHE=%{_sourcedir}/build-gomodcache
+export GOPROXY=off
+export GOSUMDB=off
+export GOTOOLCHAIN=local
+go test -mod=readonly ./...
+
+%install
+install -D -m 0755 qshare %{buildroot}%{_bindir}/qshare
+
+%files
+%license %{_sourcedir}/LICENSE
+%doc %{_sourcedir}/README.md
+%{_bindir}/qshare
+
+%changelog

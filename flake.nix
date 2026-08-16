@@ -19,6 +19,7 @@
             gotools
             golangci-lint
             actionlint
+            python3Packages.osc
           ];
 
           shellHook = ''
