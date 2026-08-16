@@ -2,7 +2,7 @@ version: "1.1"
 
 rebuild_main:
   steps:
-    - rebuild_package:
+    - trigger_services:
         project: home:canta-9142
         package: qshare
   filters:

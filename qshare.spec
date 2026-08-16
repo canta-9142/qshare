@@ -12,6 +12,8 @@ Release:        0
 Summary:        Local file sharing with browser-capable devices
 License:        MIT
 URL:            https://github.com/canta-9142/qshare
+Source0:        %{name}-%{version}.tar.gz
+Source1:        vendor.tar.gz
 ExclusiveArch:  x86_64 aarch64
 %if 0%{?suse_version}
 BuildRequires:  golang(API) >= 1.25
@@ -26,25 +28,21 @@ files and text with a smartphone or another browser-capable device without a
 dedicated receiving application, cloud storage, or an account.
 
 %prep
-%autosetup -T -c -n %{name}-%{version}
-cp -a %{_sourcedir}/cmd .
-cp -a %{_sourcedir}/internal .
-cp -a %{_sourcedir}/go.mod %{_sourcedir}/go.sum .
-cp -a %{_sourcedir}/LICENSE %{_sourcedir}/README.md .
+%autosetup -a 1
 
 %build
 export CGO_ENABLED=0
-export GOPROXY=file://%{_sourcedir}/build-gomodcache
+export GOPROXY=off
 export GOSUMDB=off
 export GOTOOLCHAIN=local
-go build -mod=readonly -trimpath -o qshare ./cmd/qshare
+go build -buildvcs=false -mod=vendor -trimpath -o qshare ./cmd/qshare
 
 %check
 export CGO_ENABLED=0
-export GOPROXY=file://%{_sourcedir}/build-gomodcache
+export GOPROXY=off
 export GOSUMDB=off
 export GOTOOLCHAIN=local
-go test -mod=readonly ./...
+go test -mod=vendor ./...
 
 %install
 install -D -m 0755 qshare %{buildroot}%{_bindir}/qshare
