@@ -14,6 +14,20 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
+func TestMapArgumentsSelectsDirectoryMode(t *testing.T) {
+	dir := t.TempDir()
+	result, err := mapArguments(arguments{Files: []string{dir}, Expire: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Request.Operation != app.OperationSendDirectory {
+		t.Fatalf("Operation = %v", result.Request.Operation)
+	}
+	if _, err := mapArguments(arguments{Files: []string{dir, "file"}, Expire: time.Minute}); err == nil {
+		t.Fatal("directory combined with file was accepted")
+	}
+}
+
 func TestMapArgumentsSelectsPipedStdinText(t *testing.T) {
 	want := "hello, 世界\n"
 	result, err := mapArgumentsWithInput(arguments{Expire: time.Minute}, stdinInput{

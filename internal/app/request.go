@@ -10,6 +10,7 @@ type Operation int
 
 const (
 	OperationSendFile Operation = iota
+	OperationSendDirectory
 	OperationSendText
 	OperationReceive
 )

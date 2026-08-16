@@ -45,6 +45,11 @@ func NewSendFile(sess *session.Session) *Server {
 	return server
 }
 
+func NewSendDirectory(sess *session.Session) *Server {
+	server := newServer(sess)
+	return server
+}
+
 func NewSendText(sess *session.Session) *Server {
 	server := newServer(sess)
 
