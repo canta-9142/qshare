@@ -26,6 +26,7 @@ dedicated receiving application, cloud storage, or an account.
 cp -a %{_sourcedir}/cmd .
 cp -a %{_sourcedir}/internal .
 cp -a %{_sourcedir}/go.mod %{_sourcedir}/go.sum .
+cp -a %{_sourcedir}/LICENSE %{_sourcedir}/README.md .
 
 %build
 export CGO_ENABLED=0
@@ -45,8 +46,8 @@ go test -mod=readonly ./...
 install -D -m 0755 qshare %{buildroot}%{_bindir}/qshare
 
 %files
-%license %{_sourcedir}/LICENSE
-%doc %{_sourcedir}/README.md
+%license LICENSE
+%doc README.md
 %{_bindir}/qshare
 
 %changelog
