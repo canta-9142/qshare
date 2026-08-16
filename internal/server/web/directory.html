@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{{.Name}} - Qshare</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color-scheme: light dark; }
+    body { margin: 0; background: #fff; color: #111; }
+    main { width: min(100% - 32px, 640px); margin: 48px auto; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
+    nav a, .entry { color: inherit; }
+    h1 { font-size: 1.5rem; }
+    ul { list-style: none; margin: 32px 0; padding: 0; border-top: 1px solid currentColor; }
+    li { border-bottom: 1px solid currentColor; }
+    .entry { display: flex; justify-content: space-between; gap: 16px; padding: 16px 0; text-decoration: none; }
+    .name { overflow-wrap: anywhere; }
+    .download { display: block; padding: 12px; border: 1px solid currentColor; background: #111; color: #fff; text-align: center; text-decoration: none; }
+    @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } .download { background: #eee; color: #111; } }
+  </style>
+</head>
+<body><main>
+  <nav aria-label="Breadcrumb">{{range .Breadcrumbs}}<a href="{{.URL}}">{{.Name}}</a><span>/</span>{{end}}</nav>
+  <h1>{{.Name}}</h1>
+  <ul>
+    {{range .Directories}}<li><a class="entry" href="{{.URL}}"><span class="name">{{.Name}}/</span></a></li>{{end}}
+    {{range .Files}}<li><a class="entry" href="{{.URL}}"><span class="name">{{.Name}}</span><span>{{.Size}}</span></a></li>{{end}}
+  </ul>
+  <a class="download" href="{{.ArchiveURL}}">Download directory as ZIP</a>
+</main></body>
+</html>

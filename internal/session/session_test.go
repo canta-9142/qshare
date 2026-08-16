@@ -168,3 +168,34 @@ func TestSendSessionRejectsResourceFromAnotherSession(t *testing.T) {
 		t.Fatal("Resolve() accepted another session's resource ID")
 	}
 }
+
+func TestDirectorySessionResolvesOnlyItsNodes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := share.OpenDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer directory.Close()
+	sess, err := NewSendDirectory(directory, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := directory.Root().Children()[0]
+	if got, ok := sess.ResolveNode(sess.Token(), node.ID(), time.Now()); !ok || got != node {
+		t.Fatal("ResolveNode() rejected node")
+	}
+	if _, ok := sess.ResolveNode(sess.Token(), "unknown", time.Now()); ok {
+		t.Fatal("ResolveNode() accepted unknown ID")
+	}
+	wrong := sess.Token()
+	wrong[0] ^= 0xff
+	if _, ok := sess.ResolveNode(wrong, node.ID(), time.Now()); ok {
+		t.Fatal("ResolveNode() accepted wrong token")
+	}
+	if _, ok := sess.ResolveNode(sess.Token(), node.ID(), sess.ExpiresAt()); ok {
+		t.Fatal("ResolveNode() accepted expired session")
+	}
+}

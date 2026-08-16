@@ -1,6 +1,6 @@
 # qshare Requirements
 
-Version: 0.4 Draft
+Version: 0.5 Draft
 
 ## 1. Overview
 
@@ -221,15 +221,70 @@ Archive generation must stop when the HTTP request is cancelled.
 
 ## 8. Directory sharing
 
-A later version must support:
+Version 0.5 must support:
 
 ```sh
 qshare ./directory
 ```
 
-Only files within the explicitly shared directory boundary may be exposed.
+Directory mode accepts exactly one positional directory. It must not be combined
+with positional files or another directory. The selected directory itself must
+not be a symbolic link; symbolic links in its ancestor path are permitted.
 
-Directory traversal outside that boundary is forbidden.
+At session startup, qshare must walk the selected directory and freeze an
+authorized resource tree. Only regular files and directories in that tree may
+be exposed. Each authorized node must receive an opaque ID independent of its
+local path and name. HTTP input must resolve those IDs and must never be treated
+as a filesystem path.
+
+Directory traversal uses these rules:
+
+* symbolic links below the shared root are excluded and never dereferenced;
+* entries whose names begin with `.` are excluded, including their descendants;
+* an explicitly selected root whose own name begins with `.` is allowed;
+* sockets, FIFOs, devices, and other non-regular special files are excluded;
+* excluded entries do not cause startup to fail;
+* a directory-read, metadata, or permission error aborts the entire operation;
+  qshare must not start a partial session.
+
+The walk is limited to 1,000 regular files, 2,000 encountered entries, and a
+maximum depth of 20. The root is depth 0 and is not counted as an encountered
+entry. Every child observed while walking counts toward the entry limit even
+when it is excluded; excluded directories are not descended into. Exceeding a
+limit aborts startup before the server or session is created. These limits
+bound startup work and session metadata without limiting the size of an
+explicitly authorized regular file.
+
+The browser must preserve the directory hierarchy. Within each directory it
+lists directories first and then files, with each group sorted by name. It must
+support breadcrumb navigation, parent navigation, and empty directories. Local
+absolute paths and excluded entries must not be displayed.
+
+The authorized names, hierarchy, and filesystem identities are fixed when the
+session starts. Files and directories added later are not exposed. Before an
+individual or archive download uses an entry, qshare must safely reopen it from
+the shared root and verify that it is the same filesystem object authorized at
+startup. A missing, renamed, or replaced object must not be served. Changes to
+the contents of the same regular-file object are allowed and the download
+streams its contents at request time. qshare does not snapshot file contents.
+
+Authorized regular files support individual `GET` and `HEAD` downloads,
+including retries and Range requests. Unknown IDs, IDs from another session,
+expired sessions, and entries that fail identity verification must not disclose
+resource metadata or contents.
+
+The browser must also offer the shared directory as an on-demand ZIP stream.
+The archive filename is the shared root's base name with `.zip` appended. The
+archive contains one top-level directory named after that base name, preserves
+the authorized relative hierarchy and deterministic browser order, and includes
+empty directories. Excluded entries are not included. ZIP entry names must not
+be absolute, contain traversal components, or disclose local paths. qshare must
+not create a temporary archive or buffer the complete archive in memory, and it
+must stop generation when the request is cancelled. If an authorized object is
+missing, renamed, replaced, or otherwise unreadable during generation, qshare
+must stop that archive response rather than substitute another object.
+
+Directory traversal outside the explicitly selected boundary is forbidden.
 
 ## 9. stdin and text sharing
 

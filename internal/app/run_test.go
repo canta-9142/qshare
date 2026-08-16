@@ -18,6 +18,21 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
+func TestApplicationDirectoryValidationPrecedesServerCreation(t *testing.T) {
+	application := New(Dependencies{Stderr: io.Discard})
+	want := errors.New("walk failed")
+	application.openDirectory = func(string) (*share.Directory, error) { return nil, want }
+	created := false
+	application.newDirectoryServer = func(*session.Session) sessionServer { created = true; return nil }
+	err := application.Run(context.Background(), Request{Operation: OperationSendDirectory, Paths: []string{"dir"}, Lifetime: time.Hour})
+	if !errors.Is(err, want) {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if created {
+		t.Fatal("server created after directory validation failure")
+	}
+}
+
 func TestApplicationRunExpiration(t *testing.T) {
 	application, fake, stderr, path := newTestApplication(t)
 	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Millisecond})

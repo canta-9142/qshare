@@ -16,6 +16,8 @@ func (a *Application) Run(ctx context.Context, req Request) error {
 	switch req.Operation {
 	case OperationSendFile:
 		return a.runSendFile(ctx, req)
+	case OperationSendDirectory:
+		return a.runSendDirectory(ctx, req)
 
 	case OperationSendText:
 		return a.runSendText(ctx, req)
@@ -26,6 +28,46 @@ func (a *Application) Run(ctx context.Context, req Request) error {
 	default:
 		return fmt.Errorf("unsupported operation: %d", req.Operation)
 	}
+}
+
+func (a *Application) runSendDirectory(ctx context.Context, req Request) (runErr error) {
+	if len(req.Paths) != 1 {
+		return fmt.Errorf("directory send requires exactly one path")
+	}
+	directory, err := a.openDirectory(req.Paths[0])
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := directory.Close(); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("failed to close directory: %w", err))
+		}
+	}()
+	advertiseAddr, err := a.advertiseAddress()
+	if err != nil {
+		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
+	}
+	sess, err := session.NewSendDirectory(directory, req.Lifetime)
+	if err != nil {
+		return err
+	}
+	srv := a.newDirectoryServer(sess)
+	bindAddr := net.JoinHostPort(advertiseAddr.String(), defaultServerPort)
+	listenAddr, err := srv.Start(bindAddr)
+	if err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+	_, port, err := net.SplitHostPort(listenAddr.String())
+	if err != nil {
+		return errors.Join(fmt.Errorf("failed to parse listen address: %w", err), srv.Close())
+	}
+	accessURL := url.URL{Scheme: "http", Host: net.JoinHostPort(advertiseAddr.String(), port), Path: "/s/" + sess.Token().String()}
+	fmt.Fprintf(a.stderr, "\nQshare\n\nSharing directory  %s\n\n", directory.Root().Name())
+	if err := a.renderQR(a.stderr, accessURL.String()); err != nil {
+		return errors.Join(fmt.Errorf("failed to render QR code: %w", err), srv.Close())
+	}
+	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL.String(), req.Lifetime)
+	return a.runSession(ctx, sess, srv)
 }
 
 func (a *Application) runSendFile(ctx context.Context, req Request) (runErr error) {
