@@ -66,17 +66,28 @@ Do not introduce an alternate Go formatter without a clear project-level reason.
 
 ## 8. Nix
 
-The repository should eventually expose a development shell:
+The flake supports Linux on amd64 and arm64. Enter the development shell with:
 
 ```sh
 nix develop
 ```
 
-and application execution:
+Build or run qshare with:
 
 ```sh
+nix build
 nix run . -- FILE
 ```
+
+Validate and format the flake with:
+
+```sh
+nix flake check
+nix fmt
+```
+
+The repository includes an `.envrc` containing `use flake` for users of
+direnv and nix-direnv.
 
 Nix is an additional development and distribution interface, not a mandatory runtime dependency.
 

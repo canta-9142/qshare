@@ -169,6 +169,19 @@ from source with:
 go build ./cmd/qshare
 ```
 
+On Linux amd64 or arm64, the Nix flake can build or run the current source tree:
+
+```sh
+nix build
+nix run . -- photo.jpg
+```
+
+The current `main` branch can also be run directly without cloning it first:
+
+```sh
+nix run github:canta-9142/qshare -- photo.jpg
+```
+
 The currently configured CI build targets are:
 
 ```text
@@ -176,7 +189,7 @@ linux/amd64
 linux/arm64
 ```
 
-Windows, macOS, and package-manager distribution are planned for later versions.
+Windows, macOS, and additional package-manager distribution are planned for later versions.
 
 ## Development
 
