@@ -49,6 +49,8 @@ func NewSendDirectory(sess *session.Session) *Server {
 	server := newServer(sess)
 	server.mux.HandleFunc("GET /s/{token}", server.directoryRoot)
 	server.mux.HandleFunc("GET /b/{token}/{resource}", server.directoryPage)
+	server.mux.HandleFunc("GET /d/{token}/{resource}", server.directoryDownload)
+	server.mux.HandleFunc("HEAD /d/{token}/{resource}", server.directoryDownload)
 	return server
 }
 
