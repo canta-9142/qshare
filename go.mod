@@ -1,11 +1,11 @@
 module github.com/canta-9142/qshare
 
-go 1.25.0
+go 1.24.0
 
 require (
 	github.com/alexflint/go-arg v1.6.1
 	github.com/yeqown/go-qrcode/v2 v2.3.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.41.0
 )
 
 require (

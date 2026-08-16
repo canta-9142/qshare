@@ -16,10 +16,10 @@ Source0:        %{name}-%{version}.tar.gz
 Source1:        vendor.tar.gz
 ExclusiveArch:  x86_64 aarch64
 %if 0%{?suse_version}
-BuildRequires:  golang(API) >= 1.25
-BuildRequires:  go >= 1.25
+BuildRequires:  golang(API) >= 1.24
+BuildRequires:  go >= 1.24
 %else
-BuildRequires:  golang >= 1.25
+BuildRequires:  golang >= 1.24
 %endif
 
 %description
