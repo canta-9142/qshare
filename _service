@@ -1,5 +1,5 @@
 <services>
-  <service name="obs_scm">
+  <service name="tar_scm">
     <param name="url">https://github.com/canta-9142/qshare.git</param>
     <param name="scm">git</param>
     <param name="revision">main</param>
@@ -12,10 +12,9 @@
     <param name="extract">debian.copyright</param>
     <param name="extract">debian.rules</param>
   </service>
-  <service name="go_modules"/>
-  <service name="tar" mode="buildtime"/>
-  <service name="recompress" mode="buildtime">
+  <service name="recompress">
     <param name="file">*.tar</param>
     <param name="compression">gz</param>
   </service>
+  <service name="go_modules"/>
 </services>
