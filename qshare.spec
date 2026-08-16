@@ -2,6 +2,10 @@
 # spec file for package qshare
 #
 
+%if 0%{?fedora}
+%global debug_package %{nil}
+%endif
+
 Name:           qshare
 Version:        0.5.0
 Release:        0
