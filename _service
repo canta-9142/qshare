@@ -8,8 +8,8 @@
     <param name="extract">qshare.spec</param>
   </service>
   <service name="go_modules"/>
-  <service name="tar"/>
-  <service name="recompress">
+  <service name="tar" mode="buildtime"/>
+  <service name="recompress" mode="buildtime">
     <param name="file">*.tar</param>
     <param name="compression">gz</param>
   </service>
