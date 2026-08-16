@@ -5,6 +5,7 @@
     <param name="revision">main</param>
     <param name="filename">qshare</param>
     <param name="versionformat">0.5.0</param>
+    <param name="extract">PKGBUILD</param>
     <param name="extract">qshare.spec</param>
     <param name="extract">qshare.dsc</param>
     <param name="extract">debian.changelog</param>

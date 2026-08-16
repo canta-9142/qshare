@@ -136,6 +136,7 @@ Tasks:
 Tasks:
 
 * [ ] publish to Open Build Service
+* [x] Arch Linux package recipe
 * [ ] Nix flakes
 
 ## v1+: Additional platforms and distribution
