@@ -10,8 +10,21 @@ import (
 type Session struct {
 	token     Token
 	resources *share.Collection
+	directory *share.Directory
 	text      *share.Text
 	expiresAt time.Time
+}
+
+func NewSendDirectory(directory *share.Directory, lifetime time.Duration) (*Session, error) {
+	if directory == nil {
+		return nil, fmt.Errorf("shared directory is required")
+	}
+	session, err := newSession(lifetime)
+	if err != nil {
+		return nil, err
+	}
+	session.directory = directory
+	return session, nil
 }
 
 func NewSendFiles(resources *share.Collection, lifetime time.Duration) (*Session, error) {
@@ -77,6 +90,15 @@ func (s *Session) Token() Token {
 
 func (s *Session) Resources() *share.Collection {
 	return s.resources
+}
+
+func (s *Session) Directory() *share.Directory { return s.directory }
+
+func (s *Session) ResolveNode(candidate Token, id share.ResourceID, now time.Time) (*share.Node, bool) {
+	if s.directory == nil || !s.Authorize(candidate, now) {
+		return nil, false
+	}
+	return s.directory.Lookup(id)
 }
 
 // Resolve authorizes a token and resource ID against the same live session.

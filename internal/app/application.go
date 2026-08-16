@@ -37,16 +37,18 @@ type receiveStore interface {
 }
 
 type Application struct {
-	stderr           io.Writer
-	stdout           io.Writer
-	advertiseAddress func() (netip.Addr, error)
-	newSendServer    func(*session.Session) sessionServer
-	newTextServer    func(*session.Session) sessionServer
-	newReceiveServer func(*session.Session, receiveStore, textSubmitter) sessionServer
-	openReceiveStore func(string) (receiveStore, error)
-	newClipboardSink func(string) (receive.TextSink, error)
-	openCollection   func([]string) (*share.Collection, error)
-	renderQR         func(io.Writer, string) error
+	stderr             io.Writer
+	stdout             io.Writer
+	advertiseAddress   func() (netip.Addr, error)
+	newSendServer      func(*session.Session) sessionServer
+	newDirectoryServer func(*session.Session) sessionServer
+	newTextServer      func(*session.Session) sessionServer
+	newReceiveServer   func(*session.Session, receiveStore, textSubmitter) sessionServer
+	openReceiveStore   func(string) (receiveStore, error)
+	newClipboardSink   func(string) (receive.TextSink, error)
+	openCollection     func([]string) (*share.Collection, error)
+	openDirectory      func(string) (*share.Directory, error)
+	renderQR           func(io.Writer, string) error
 }
 
 type Dependencies struct {
@@ -64,11 +66,12 @@ func New(deps Dependencies) *Application {
 		stdout = io.Discard
 	}
 	return &Application{
-		stdout:           stdout,
-		stderr:           deps.Stderr,
-		advertiseAddress: network.AdvertiseAddress,
-		newSendServer:    func(s *session.Session) sessionServer { return server.NewSendFile(s) },
-		newTextServer:    func(s *session.Session) sessionServer { return server.NewSendText(s) },
+		stdout:             stdout,
+		stderr:             deps.Stderr,
+		advertiseAddress:   network.AdvertiseAddress,
+		newSendServer:      func(s *session.Session) sessionServer { return server.NewSendFile(s) },
+		newDirectoryServer: func(s *session.Session) sessionServer { return server.NewSendDirectory(s) },
+		newTextServer:      func(s *session.Session) sessionServer { return server.NewSendText(s) },
 		newReceiveServer: func(s *session.Session, store receiveStore, submitter textSubmitter) sessionServer {
 			return server.NewReceive(s, store, submitter)
 		},
@@ -79,6 +82,7 @@ func New(deps Dependencies) *Application {
 			return clipboard.NewSink(backend)
 		},
 		openCollection: share.OpenCollection,
+		openDirectory:  share.OpenDirectory,
 		renderQR:       qr.Render,
 	}
 }

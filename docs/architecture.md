@@ -157,6 +157,14 @@ At session creation time, requested files should be validated and converted into
 
 HTTP routing should resolve only against those resources.
 
+Directory sessions likewise retain a validated, immutable authorization tree.
+Each node has an opaque ID and a startup-time filesystem identity. The tree
+contains relative hierarchy metadata for presentation and archive generation,
+but HTTP input is never interpreted as a relative or absolute local path.
+Before a directory file is served, the share adapter reopens and verifies the
+selected root, then reopens every child path component without following
+symbolic links and verifies the authorized object's filesystem identity.
+
 Conceptually:
 
 ```text
