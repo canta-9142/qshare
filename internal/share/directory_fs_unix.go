@@ -59,6 +59,8 @@ func reopenDirectoryEntryNoFollow(dir *os.File, name string, directory bool) (*o
 	flags := unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NOFOLLOW
 	if directory {
 		flags |= unix.O_DIRECTORY
+	} else {
+		flags |= unix.O_NONBLOCK
 	}
 	fd, err := unix.Openat(int(dir.Fd()), name, flags, 0)
 	if err != nil {
