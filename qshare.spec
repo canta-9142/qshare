@@ -7,12 +7,12 @@
 %endif
 
 Name:           qshare
-Version:        0.5.4
+Version:        0.5.5
 Release:        0
 Summary:        Local file sharing with browser-capable devices
 License:        MIT
 URL:            https://github.com/canta-9142/qshare
-Source0:        https://github.com/canta-9142/qshare/archive/refs/tags/%{version}.tar.gz
+Source0:        https://github.com/canta-9142/qshare/archive/refs/tags/v%{version}.tar.gz
 Source1:        vendor.tar.gz
 ExclusiveArch:  x86_64 aarch64
 %if 0%{?suse_version}
