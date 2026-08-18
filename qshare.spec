@@ -7,7 +7,7 @@
 %endif
 
 Name:           qshare
-Version:        0.5.0
+Version:        0.5.4
 Release:        0
 Summary:        Local file sharing with browser-capable devices
 License:        MIT
