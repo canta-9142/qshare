@@ -16,6 +16,17 @@ func (e *terminationSignal) Error() string {
 	return fmt.Sprintf("received signal: %s", e.signal)
 }
 
+func (e *terminationSignal) exitCode() int {
+	switch e.signal {
+	case os.Interrupt:
+		return 130
+	case syscall.SIGTERM:
+		return 143
+	default:
+		return 1
+	}
+}
+
 func signalContext(parent context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithCancelCause(parent)
 

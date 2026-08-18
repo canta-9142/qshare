@@ -27,7 +27,7 @@
           version = "0.5.0";
 
           src = self;
-          vendorHash = "sha256-A1gjDPs71D5Cnyizn9LUy9UmNXubNCEh/bsJaK24TUc=";
+          vendorHash = "sha256-mPTvOPafgf7Q4f8INwqaVhMhNZRbiYIpKyTQnEaWdKo=";
 
           subPackages = [ "cmd/qshare" ];
           env.CGO_ENABLED = "0";

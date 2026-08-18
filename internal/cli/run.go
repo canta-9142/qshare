@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"syscall"
 
 	"github.com/canta-9142/qshare/internal/app"
 )
@@ -50,6 +49,10 @@ func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout i
 }
 
 func exitCodeForError(err error) int {
+	if errors.Is(err, app.ErrInvalidRequest) {
+		return 2
+	}
+
 	var signalErr *terminationSignal
 	if !errors.As(err, &signalErr) {
 		return 1
@@ -58,14 +61,7 @@ func exitCodeForError(err error) int {
 		return 1
 	}
 
-	switch signalErr.signal {
-	case os.Interrupt:
-		return 130
-	case syscall.SIGTERM:
-		return 143
-	default:
-		return 1
-	}
+	return signalErr.exitCode()
 }
 
 func containsOnlyTerminationErrors(err error) bool {

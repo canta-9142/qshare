@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"golang.org/x/sys/unix"
 )
 
 func TestOpenDirectoryFreezesFilteredOrderedTree(t *testing.T) {
@@ -22,10 +20,7 @@ func TestOpenDirectoryFreezesFilteredOrderedTree(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "a.txt"), filepath.Join(root, "link")); err != nil {
 		t.Fatal(err)
 	}
-	if err := unix.Mkfifo(filepath.Join(root, "pipe"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(root, "fifo-parent"), 0o700); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "empty-dir"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,7 +30,7 @@ func TestOpenDirectoryFreezesFilteredOrderedTree(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = d.Close() })
 	children := d.Root().Children()
-	if got := nodeNames(children); fmt.Sprint(got) != "[a-dir b-dir fifo-parent a.txt z.txt]" {
+	if got := nodeNames(children); fmt.Sprint(got) != "[a-dir b-dir empty-dir a.txt z.txt]" {
 		t.Fatalf("children = %v", got)
 	}
 	for _, child := range children {

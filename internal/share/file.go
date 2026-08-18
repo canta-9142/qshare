@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 type File struct {
@@ -26,15 +24,9 @@ func Open(path string) (*File, error) {
 		return nil, fmt.Errorf("shared file is not a regular file: %s", path)
 	}
 
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	f, err := openFileNoFollow(path)
 	if err != nil {
-		return nil, fmt.Errorf("open shared file without following final symlink: %w", err)
-	}
-
-	f := os.NewFile(uintptr(fd), path)
-	if f == nil {
-		unix.Close(fd)
-		return nil, fmt.Errorf("create os.File from file descriptor")
+		return nil, err
 	}
 
 	info, err = f.Stat()

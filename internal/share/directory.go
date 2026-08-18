@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -33,7 +31,7 @@ type Node struct {
 	size     int64
 	modTime  time.Time
 	rel      []string
-	identity fileIdentity
+	identity os.FileInfo
 	children []*Node
 	parent   *Node
 	pinned   *os.File
@@ -46,8 +44,6 @@ func (n *Node) Size() int64        { return n.size }
 func (n *Node) ModTime() time.Time { return n.modTime }
 func (n *Node) Children() []*Node  { return append([]*Node(nil), n.children...) }
 func (n *Node) Parent() *Node      { return n.parent }
-
-type fileIdentity struct{ dev, ino uint64 }
 
 type Directory struct {
 	root     *os.File
@@ -68,14 +64,9 @@ func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory
 	if !info.IsDir() {
 		return nil, fmt.Errorf("shared directory is not a directory: %s", path)
 	}
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	root, err := openDirectoryNoFollow(path)
 	if err != nil {
 		return nil, fmt.Errorf("open shared directory: %w", err)
-	}
-	root := os.NewFile(uintptr(fd), path)
-	if root == nil {
-		unix.Close(fd)
-		return nil, errors.New("create shared directory handle")
 	}
 	d := &Directory{root: root, rootPath: path, byID: make(map[ResourceID]*Node)}
 	defer func() {
@@ -84,8 +75,8 @@ func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory
 		}
 	}()
 
-	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil {
+	rootInfo, err := root.Stat()
+	if err != nil {
 		return nil, fmt.Errorf("stat shared directory: %w", err)
 	}
 	rootID, err := d.uniqueID(makeID)
@@ -97,7 +88,7 @@ func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory
 		return nil, fmt.Errorf("resolve shared directory name: %w", err)
 	}
 	d.rootPath = absPath
-	d.node = &Node{id: rootID, name: filepath.Base(absPath), kind: NodeDirectory, modTime: info.ModTime(), identity: identityOf(&stat)}
+	d.node = &Node{id: rootID, name: filepath.Base(absPath), kind: NodeDirectory, modTime: info.ModTime(), identity: rootInfo}
 	d.byID[rootID] = d.node
 	files, entries := 0, 0
 	if err := d.walk(root, d.node, 0, &files, &entries, makeID); err != nil {
@@ -121,59 +112,34 @@ func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		var observed unix.Stat_t
-		if err := unix.Fstatat(int(dir.Fd()), name, &observed, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			return fmt.Errorf("stat directory entry %q: %w", name, err)
-		}
-		observedMode := uint32(observed.Mode) & unix.S_IFMT
-		if observedMode != unix.S_IFREG && observedMode != unix.S_IFDIR {
-			continue
-		}
-		fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		child, info, included, err := openDirectoryEntryNoFollow(dir, name)
 		if err != nil {
-			return fmt.Errorf("open directory entry %q: %w", name, err)
+			return err
 		}
-		var stat unix.Stat_t
-		err = unix.Fstat(fd, &stat)
-		if err != nil {
-			unix.Close(fd)
-			return fmt.Errorf("stat directory entry %q: %w", name, err)
-		}
-		mode := uint32(stat.Mode) & unix.S_IFMT
-		if mode != unix.S_IFREG && mode != unix.S_IFDIR {
-			unix.Close(fd)
+		if !included {
 			continue
 		}
 		childDepth := depth + 1
 		if childDepth > MaxDirectoryDepth {
-			unix.Close(fd)
+			child.Close()
 			return fmt.Errorf("directory depth exceeds maximum of %d", MaxDirectoryDepth)
 		}
 		id, err := d.uniqueID(makeID)
 		if err != nil {
-			unix.Close(fd)
+			child.Close()
 			return err
 		}
-		node := &Node{id: id, name: name, rel: append(append([]string(nil), parent.rel...), name), identity: identityOf(&stat), size: stat.Size, modTime: time.Unix(int64(stat.Mtim.Sec), int64(stat.Mtim.Nsec)), parent: parent}
-		if mode == unix.S_IFREG {
+		node := &Node{id: id, name: name, rel: append(append([]string(nil), parent.rel...), name), identity: info, size: info.Size(), modTime: info.ModTime(), parent: parent}
+		if info.Mode().IsRegular() {
 			node.kind = NodeFile
 			*files++
 			if *files > MaxDirectoryFiles {
-				unix.Close(fd)
+				child.Close()
 				return fmt.Errorf("directory contains too many regular files: maximum is %d", MaxDirectoryFiles)
 			}
-			node.pinned = os.NewFile(uintptr(fd), name)
-			if node.pinned == nil {
-				unix.Close(fd)
-				return errors.New("create pinned file handle")
-			}
+			node.pinned = child
 		} else {
 			node.kind = NodeDirectory
-			child := os.NewFile(uintptr(fd), name)
-			if child == nil {
-				unix.Close(fd)
-				return errors.New("create directory entry handle")
-			}
 			err = d.walk(child, node, childDepth, files, entries, makeID)
 			closeErr := child.Close()
 			if err != nil || closeErr != nil {
@@ -203,9 +169,6 @@ func (d *Directory) uniqueID(makeID func() (ResourceID, error)) (ResourceID, err
 	return id, nil
 }
 
-func identityOf(stat *unix.Stat_t) fileIdentity {
-	return fileIdentity{dev: uint64(stat.Dev), ino: stat.Ino}
-}
 func (d *Directory) Root() *Node                        { return d.node }
 func (d *Directory) Lookup(id ResourceID) (*Node, bool) { n, ok := d.byID[id]; return n, ok }
 
@@ -213,81 +176,72 @@ func (d *Directory) OpenFile(node *Node) (*DirectoryFile, error) {
 	if node == nil || node.kind != NodeFile || d.byID[node.id] != node {
 		return nil, errors.New("node is not an authorized file")
 	}
-	fd, err := d.openAuthorizedRoot()
+	file, err := d.openAuthorizedRoot()
 	if err != nil {
 		return nil, err
 	}
 	for i, part := range node.rel {
-		flags := unix.O_RDONLY | unix.O_CLOEXEC | unix.O_NOFOLLOW
-		if i < len(node.rel)-1 {
-			flags |= unix.O_DIRECTORY
-		}
-		next, openErr := unix.Openat(fd, part, flags, 0)
-		unix.Close(fd)
+		next, openErr := reopenDirectoryEntryNoFollow(file, part, i < len(node.rel)-1)
+		file.Close()
 		if openErr != nil {
 			return nil, fmt.Errorf("reopen authorized file: %w", openErr)
 		}
-		fd = next
+		file = next
 	}
-	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil {
-		unix.Close(fd)
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
 		return nil, fmt.Errorf("verify authorized file: %w", err)
 	}
-	if uint32(stat.Mode)&unix.S_IFMT != unix.S_IFREG || identityOf(&stat) != node.identity {
-		unix.Close(fd)
+	if !info.Mode().IsRegular() || !os.SameFile(info, node.identity) {
+		file.Close()
 		return nil, errors.New("authorized file was replaced")
 	}
-	f := os.NewFile(uintptr(fd), node.name)
-	if f == nil {
-		unix.Close(fd)
-		return nil, errors.New("create authorized file handle")
-	}
-	return &DirectoryFile{file: f, name: node.name, size: stat.Size, modTime: time.Unix(int64(stat.Mtim.Sec), int64(stat.Mtim.Nsec))}, nil
+	return &DirectoryFile{file: file, name: node.name, size: info.Size(), modTime: info.ModTime()}, nil
 }
 
 func (d *Directory) VerifyDirectory(node *Node) error {
 	if node == nil || node.kind != NodeDirectory || d.byID[node.id] != node {
 		return errors.New("node is not an authorized directory")
 	}
-	fd, err := d.openAuthorizedRoot()
+	file, err := d.openAuthorizedRoot()
 	if err != nil {
 		return err
 	}
 	for _, part := range node.rel {
-		next, openErr := unix.Openat(fd, part, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_DIRECTORY, 0)
-		unix.Close(fd)
+		next, openErr := reopenDirectoryEntryNoFollow(file, part, true)
+		file.Close()
 		if openErr != nil {
 			return fmt.Errorf("reopen authorized directory: %w", openErr)
 		}
-		fd = next
+		file = next
 	}
-	defer unix.Close(fd)
-	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil {
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
 		return fmt.Errorf("verify authorized directory: %w", err)
 	}
-	if uint32(stat.Mode)&unix.S_IFMT != unix.S_IFDIR || identityOf(&stat) != node.identity {
+	if !info.IsDir() || !os.SameFile(info, node.identity) {
 		return errors.New("authorized directory was replaced")
 	}
 	return nil
 }
 
-func (d *Directory) openAuthorizedRoot() (int, error) {
-	fd, err := unix.Open(d.rootPath, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+func (d *Directory) openAuthorizedRoot() (*os.File, error) {
+	file, err := openDirectoryNoFollow(d.rootPath)
 	if err != nil {
-		return -1, fmt.Errorf("reopen shared root: %w", err)
+		return nil, fmt.Errorf("reopen shared root: %w", err)
 	}
-	var stat unix.Stat_t
-	if err := unix.Fstat(fd, &stat); err != nil {
-		unix.Close(fd)
-		return -1, fmt.Errorf("verify shared root: %w", err)
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("verify shared root: %w", err)
 	}
-	if identityOf(&stat) != d.node.identity {
-		unix.Close(fd)
-		return -1, errors.New("shared root was replaced")
+	if !os.SameFile(info, d.node.identity) {
+		file.Close()
+		return nil, errors.New("shared root was replaced")
 	}
-	return fd, nil
+	return file, nil
 }
 
 type DirectoryFile struct {
