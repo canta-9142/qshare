@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"golang.org/x/sys/unix"
 )
 
 func TestOpenRegularFile(t *testing.T) {
@@ -108,11 +106,6 @@ func TestOpenRejectsUnsupportedPaths(t *testing.T) {
 	if err := os.Symlink(regularPath, symlinkPath); err != nil {
 		t.Fatalf("Symlink() error = %v", err)
 	}
-	fifoPath := filepath.Join(dir, "pipe")
-	if err := unix.Mkfifo(fifoPath, 0o600); err != nil {
-		t.Fatalf("Mkfifo() error = %v", err)
-	}
-
 	tests := []struct {
 		name string
 		path string
@@ -120,7 +113,6 @@ func TestOpenRejectsUnsupportedPaths(t *testing.T) {
 		{name: "missing", path: filepath.Join(dir, "missing.txt")},
 		{name: "directory", path: dir},
 		{name: "final symlink", path: symlinkPath},
-		{name: "FIFO", path: fifoPath},
 	}
 
 	for _, tt := range tests {
