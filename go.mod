@@ -6,6 +6,7 @@ require (
 	github.com/alexflint/go-arg v1.6.1
 	github.com/yeqown/go-qrcode/v2 v2.3.0
 	golang.org/x/sys v0.41.0
+	golang.org/x/term v0.40.0
 )
 
 require (
