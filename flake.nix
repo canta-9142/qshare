@@ -24,7 +24,7 @@
         pkgs = import nixpkgs { inherit system; };
         qshare = pkgs.buildGoModule {
           pname = "qshare";
-          version = "0.5.0";
+          version = "0.6.0";
 
           src = self;
           vendorHash = "sha256-mPTvOPafgf7Q4f8INwqaVhMhNZRbiYIpKyTQnEaWdKo=";
