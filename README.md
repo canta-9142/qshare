@@ -162,12 +162,44 @@ See [`docs/security.md`](docs/security.md) for the development security model an
 
 ## Installation
 
-qshare does not yet have a stable release. Build the current development version
-from source with:
+Packaged builds for Fedora and Debian are published through the qshare Open
+Build Service (OBS) repository. This is a third-party repository and is not
+enabled by Fedora or Debian by default.
+
+### Fedora
+
+Fedora 43 and 44 are supported on x86_64 and aarch64. Add the repository that
+matches the installed Fedora release, then install qshare:
 
 ```sh
-go build ./cmd/qshare
+fedora_version=$(rpm -E %fedora)
+sudo dnf config-manager addrepo \
+  --from-repofile="https://download.opensuse.org/repositories/home:/canta-9142/Fedora_${fedora_version}/home:canta-9142.repo"
+sudo dnf install qshare
 ```
+
+### Debian
+
+Debian 13 is currently supported on amd64. Add the OBS signing key and package
+repository, then install qshare:
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL \
+  https://download.opensuse.org/repositories/home:/canta-9142/Debian_13/Release.key \
+  | sudo tee /etc/apt/keyrings/qshare-obs.asc >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/qshare-obs.asc] https://download.opensuse.org/repositories/home:/canta-9142/Debian_13/ /" \
+  | sudo tee /etc/apt/sources.list.d/qshare-obs.list >/dev/null
+sudo apt update
+sudo apt install qshare
+```
+
+Packages in these OBS repositories do not make qshare available from an
+otherwise unmodified Fedora or Debian installation. Inclusion in the official
+distribution repositories requires each distribution's separate package review
+and submission process.
+
+### Nix
 
 On Linux amd64 or arm64, the Nix flake can build or run the current source tree:
 
@@ -180,6 +212,14 @@ The current `main` branch can also be run directly without cloning it first:
 
 ```sh
 nix run github:canta-9142/qshare -- photo.jpg
+```
+
+### Build from source
+
+Build the current development version with:
+
+```sh
+go build ./cmd/qshare
 ```
 
 The currently configured CI build targets are:
