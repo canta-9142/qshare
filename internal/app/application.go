@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/netip"
@@ -79,7 +80,11 @@ func New(deps Dependencies) *Application {
 			return receive.OpenStore(dir)
 		},
 		newClipboardSink: func(backend string) (receive.TextSink, error) {
-			return clipboard.NewSink(backend)
+			sink, err := clipboard.NewSink(backend)
+			if errors.Is(err, clipboard.ErrUnsupportedBackend) {
+				return nil, invalidRequest(err)
+			}
+			return sink, err
 		},
 		openCollection: share.OpenCollection,
 		openDirectory:  share.OpenDirectory,

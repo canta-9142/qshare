@@ -49,6 +49,10 @@ func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout i
 }
 
 func exitCodeForError(err error) int {
+	if errors.Is(err, app.ErrInvalidRequest) {
+		return 2
+	}
+
 	var signalErr *terminationSignal
 	if !errors.As(err, &signalErr) {
 		return 1

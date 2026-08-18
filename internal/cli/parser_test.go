@@ -119,45 +119,37 @@ func TestMapArgumentsRejectsPipedStdinConflicts(t *testing.T) {
 }
 
 func TestMapArgumentsSelectsClipboardReceiveMode(t *testing.T) {
-	for _, backend := range []string{"auto", "wl-copy", "xclip", "xsel"} {
-		t.Run(backend, func(t *testing.T) {
-			result, err := mapArguments(arguments{
-				Expire:     time.Minute,
-				ReceiveDir: "/tmp/received",
-				Clipboard:  &backend,
-			})
-			if err != nil {
-				t.Fatalf("mapArguments() error = %v", err)
-			}
-			if result.Request.Operation != app.OperationReceive {
-				t.Errorf("Operation = %v, want OperationReceive", result.Request.Operation)
-			}
-			if result.Request.Clipboard != backend {
-				t.Errorf("Clipboard = %q, want %q", result.Request.Clipboard, backend)
-			}
-		})
+	backend := "backend-name"
+	result, err := mapArguments(arguments{
+		Expire:     time.Minute,
+		ReceiveDir: "/tmp/received",
+		Clipboard:  &backend,
+	})
+	if err != nil {
+		t.Fatalf("mapArguments() error = %v", err)
+	}
+	if result.Request.Operation != app.OperationReceive {
+		t.Errorf("Operation = %v, want OperationReceive", result.Request.Operation)
+	}
+	if result.Request.Clipboard != backend {
+		t.Errorf("Clipboard = %q, want %q", result.Request.Clipboard, backend)
 	}
 }
 
-func TestMapArgumentsRejectsInvalidClipboardRequests(t *testing.T) {
+func TestMapArgumentsRejectsClipboardConflicts(t *testing.T) {
 	text := "text"
 	tests := []struct {
 		name      string
-		backend   string
 		configure func(*arguments, *string)
 	}{
-		{name: "unsupported", backend: "unknown"},
-		{name: "empty", backend: ""},
 		{
-			name:    "with file",
-			backend: "wl-copy",
+			name: "with file",
 			configure: func(args *arguments, _ *string) {
 				args.Files = []string{"file.txt"}
 			},
 		},
 		{
-			name:    "with explicit text",
-			backend: "wl-copy",
+			name: "with explicit text",
 			configure: func(args *arguments, _ *string) {
 				args.Text = &text
 			},
@@ -166,14 +158,40 @@ func TestMapArgumentsRejectsInvalidClipboardRequests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := arguments{Expire: time.Minute, Clipboard: &tt.backend}
+			backend := "backend-name"
+			args := arguments{Expire: time.Minute, Clipboard: &backend}
 			if tt.configure != nil {
-				tt.configure(&args, &tt.backend)
+				tt.configure(&args, &backend)
 			}
 			if _, err := mapArguments(args); err == nil {
 				t.Fatal("mapArguments() error = nil, want error")
 			}
 		})
+	}
+}
+
+func TestMapArgumentsRejectsEmptyClipboardBackend(t *testing.T) {
+	backend := ""
+	if _, err := mapArguments(arguments{Expire: time.Minute, Clipboard: &backend}); err == nil {
+		t.Fatal("mapArguments() error = nil, want error")
+	}
+}
+
+func TestRunRejectsUnsupportedClipboardBackendAsUsageError(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"--receive-dir", t.TempDir(), "--clipboard", "unsupported"},
+		nil,
+		true,
+		&stdout,
+		&stderr,
+	)
+	if code != 2 {
+		t.Fatalf("runWithInput() = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unsupported clipboard backend") {
+		t.Errorf("stderr = %q, want unsupported-backend diagnostic", stderr.String())
 	}
 }
 
