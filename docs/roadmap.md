@@ -139,10 +139,25 @@ Tasks:
 * [x] Arch Linux package recipe
 * [x] Nix flakes
 
+## v0.6
+
+Tasks:
+
+* [ ] reorganize documentation
+* [ ] remove unnecessary Linux dependencies
+* [ ] improve the Web UI
+
+Distribution works:
+
+* [x] fedora COPR
+* [ ] Ubuntu Launchpad PPA
+* [ ] Nixpkgs
+
 ## v1+: Additional platforms and distribution
 
 Tasks:
 
+* [ ] AUR (when the restrictions are lifted)
 * [ ] macOS LAN Mode
 * [ ] Windows LAN Mode
 * [ ] Homebrew distribution
