@@ -1,26 +1,23 @@
-#
-# spec file for package qshare
-#
+# Copr must have network access enabled so Go modules can be downloaded during
+# the build. Module contents are verified against go.sum.
 
-%if 0%{?fedora}
 %global debug_package %{nil}
-%endif
 
 Name:           qshare
 Version:        0.5.5
-Release:        0
+Release:        1%{?dist}
 Summary:        Local file sharing with browser-capable devices
+
 License:        MIT
 URL:            https://github.com/canta-9142/qshare
-Source0:        https://github.com/canta-9142/qshare/archive/refs/tags/v%{version}.tar.gz
-Source1:        vendor.tar.gz
+Source0:        %{url}/archive/refs/tags/v%{version}/%{name}-%{version}.tar.gz
+
 ExclusiveArch:  x86_64 aarch64
-%if 0%{?suse_version}
-BuildRequires:  golang(API) >= 1.24
-BuildRequires:  go >= 1.24
-%else
 BuildRequires:  golang >= 1.24
-%endif
+
+Suggests:       wl-clipboard
+Suggests:       xclip
+Suggests:       xsel
 
 %description
 qshare is a local file-sharing command-line tool. It lets a computer exchange
@@ -28,24 +25,26 @@ files and text with a smartphone or another browser-capable device without a
 dedicated receiving application, cloud storage, or an account.
 
 %prep
-%autosetup -a 1
+%autosetup
 
 %build
 export CGO_ENABLED=0
-export GOPROXY=off
-export GOSUMDB=off
 export GOTOOLCHAIN=local
-go build -buildvcs=false -mod=vendor -trimpath -o qshare ./cmd/qshare
+go build \
+    -buildmode=pie \
+    -buildvcs=false \
+    -mod=readonly \
+    -trimpath \
+    -o qshare \
+    ./cmd/qshare
 
 %check
 export CGO_ENABLED=0
-export GOPROXY=off
-export GOSUMDB=off
 export GOTOOLCHAIN=local
-go test -mod=vendor ./...
+go test -buildvcs=false -mod=readonly ./...
 
 %install
-install -D -m 0755 qshare %{buildroot}%{_bindir}/qshare
+install -Dpm0755 qshare %{buildroot}%{_bindir}/qshare
 
 %files
 %license LICENSE
@@ -53,3 +52,5 @@ install -D -m 0755 qshare %{buildroot}%{_bindir}/qshare
 %{_bindir}/qshare
 
 %changelog
+* Tue Aug 18 2026 Kanta Imai <work@floating-gate.com> - 0.5.5-1
+- Add the Copr package specification
