@@ -279,6 +279,28 @@ func TestApplicationClipboardConfigurationFailurePreventsServerStart(t *testing.
 	}
 }
 
+func TestApplicationUnsupportedClipboardBackendIsInvalidRequest(t *testing.T) {
+	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
+	storeOpened := false
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		storeOpened = true
+		return nil, errors.New("unexpected receive store open")
+	}
+
+	err := application.Run(context.Background(), Request{
+		Operation:  OperationReceive,
+		ReceiveDir: "/receive",
+		Clipboard:  "unsupported",
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("Run() error = %v, want ErrInvalidRequest", err)
+	}
+	if storeOpened {
+		t.Fatal("receive store was opened for an unsupported clipboard backend")
+	}
+}
+
 func TestApplicationRunTextSendMode(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}

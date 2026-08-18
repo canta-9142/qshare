@@ -188,6 +188,18 @@ func (a *Application) runSendText(ctx context.Context, req Request) error {
 }
 
 func (a *Application) runReceive(ctx context.Context, req Request) error {
+	var textSink receive.TextSink = receive.NewWriterTextSink(a.stdout)
+	if req.Clipboard != "" {
+		var err error
+		textSink, err = a.newClipboardSink(req.Clipboard)
+		if err != nil {
+			if errors.Is(err, ErrInvalidRequest) {
+				return err
+			}
+			return fmt.Errorf("configure clipboard backend: %w", err)
+		}
+	}
+
 	store, err := a.openReceiveStore(req.ReceiveDir)
 	if err != nil {
 		return fmt.Errorf("open receive store: %w", err)
@@ -196,14 +208,6 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 	sess, err := session.NewReceive(req.Lifetime)
 	if err != nil {
 		return err
-	}
-
-	var textSink receive.TextSink = receive.NewWriterTextSink(a.stdout)
-	if req.Clipboard != "" {
-		textSink, err = a.newClipboardSink(req.Clipboard)
-		if err != nil {
-			return fmt.Errorf("configure clipboard backend: %w", err)
-		}
 	}
 
 	textProcessor := receive.NewTextProcessor(

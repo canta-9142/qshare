@@ -137,10 +137,8 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		if len(args.Files) != 0 {
 			return parseResult{}, errors.New("--clipboard cannot be combined with a file")
 		}
-		switch *args.Clipboard {
-		case "auto", "wl-copy", "xclip", "xsel":
-		default:
-			return parseResult{}, fmt.Errorf("unsupported clipboard backend: %q", *args.Clipboard)
+		if *args.Clipboard == "" {
+			return parseResult{}, errors.New("--clipboard requires a non-empty backend")
 		}
 
 		receiveDir := args.ReceiveDir
