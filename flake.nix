@@ -22,7 +22,17 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        qshare = pkgs.buildGoModule {
+        # The locked nixpkgs revision still ships the vulnerable Go 1.26.5.
+        # Keep Nix builds aligned with the patched toolchain used by CI.
+        go = pkgs.go_1_26.overrideAttrs (_: {
+          version = "1.26.6";
+          src = pkgs.fetchurl {
+            url = "https://go.dev/dl/go1.26.6.src.tar.gz";
+            hash = "sha256-oHIcVMaIkBRI13rZs+x+p8R0cwdV/4kTgukuy5P/LLE=";
+          };
+        });
+        buildGoModule = pkgs.buildGoModule.override { inherit go; };
+        qshare = buildGoModule {
           pname = "qshare";
           version = "0.6.0";
 
@@ -76,7 +86,7 @@
 
         devShells.default = pkgs.mkShell {
           packages = [
-            pkgs.go
+            go
             pkgs.gopls
             pkgs.gotools
             pkgs.golangci-lint
