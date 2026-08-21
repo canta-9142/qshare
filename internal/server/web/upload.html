@@ -167,7 +167,17 @@
           return;
         }
 
-        const result = JSON.parse(request.responseText);
+        let result;
+        try {
+          result = JSON.parse(request.responseText);
+        } catch {
+          status.textContent = "The computer returned an invalid response. Please try again.";
+          return;
+        }
+        if (typeof result.name !== "string" || result.name === "") {
+          status.textContent = "The computer returned an invalid response. Please try again.";
+          return;
+        }
         status.textContent = `Saved as ${result.name}`;
         form.reset();
         progress.value = 100;
