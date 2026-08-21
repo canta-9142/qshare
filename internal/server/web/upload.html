@@ -127,12 +127,31 @@
     const progress = document.querySelector("#progress");
     const status = document.querySelector("#status");
 
+    function formatBytes(bytes) {
+      if (bytes < 1024) {
+        return `${Math.round(bytes)} B`;
+      }
+
+      const units = ["KiB", "MiB", "GiB"];
+      let value = bytes;
+      let unit = "B";
+      for (let index = 0; index < units.length; index++) {
+        value /= 1024;
+        unit = units[index];
+        if (value < 1024 || index === units.length - 1) {
+          break;
+        }
+      }
+      return `${value.toFixed(1)} ${unit}`;
+    }
+
     form.addEventListener("submit", event => {
       event.preventDefault();
 
       const formData = new FormData(form);
       const request = new XMLHttpRequest();
       request.open("POST", form.action);
+      const uploadStartedAt = performance.now();
 
       fileInput.disabled = true;
       uploadButton.disabled = true;
@@ -141,9 +160,18 @@
       status.textContent = "Uploading…";
 
       request.upload.addEventListener("progress", event => {
+        const elapsedSeconds = (performance.now() - uploadStartedAt) / 1000;
+        const averageSpeed = elapsedSeconds > 0 ? event.loaded / elapsedSeconds : 0;
+
         if (event.lengthComputable) {
-          progress.value = event.loaded / event.total * 100;
+          const percentage = event.loaded / event.total * 100;
+          progress.value = percentage;
+          const transferred = `${formatBytes(event.loaded)} / ${formatBytes(event.total)}`;
+          status.textContent = `Uploading… ${Math.round(percentage)}% · ${transferred} · ${formatBytes(averageSpeed)}/s`;
+          return;
         }
+
+        status.textContent = `Uploading… ${formatBytes(event.loaded)} transferred · ${formatBytes(averageSpeed)}/s`;
       });
 
       request.addEventListener("load", () => {
