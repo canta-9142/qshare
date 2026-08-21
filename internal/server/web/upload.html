@@ -148,7 +148,22 @@
 
       request.addEventListener("load", () => {
         if (request.status !== 201) {
-          status.textContent = "Upload failed.";
+          switch (request.status) {
+          case 400:
+            status.textContent = "The selected file could not be uploaded.";
+            break;
+          case 404:
+            status.textContent = "This sharing session has expired or is unavailable.";
+            break;
+          case 413:
+            status.textContent = "The file is too large. The maximum size is 1 GiB.";
+            break;
+          case 500:
+            status.textContent = "The file could not be saved on the computer.";
+            break;
+          default:
+            status.textContent = "Upload failed. Please try again.";
+          }
           return;
         }
 
@@ -159,7 +174,7 @@
       });
 
       request.addEventListener("error", () => {
-        status.textContent = "Upload failed.";
+        status.textContent = "The connection was lost. Check the network and try again.";
       });
 
       request.addEventListener("loadend", () => {
