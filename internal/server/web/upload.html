@@ -122,15 +122,20 @@
 
   <script>
     const form = document.querySelector("#upload");
+    const fileInput = document.querySelector("#file");
+    const uploadButton = form.querySelector('button[type="submit"]');
     const progress = document.querySelector("#progress");
     const status = document.querySelector("#status");
 
     form.addEventListener("submit", event => {
       event.preventDefault();
 
+      const formData = new FormData(form);
       const request = new XMLHttpRequest();
       request.open("POST", form.action);
 
+      fileInput.disabled = true;
+      uploadButton.disabled = true;
       progress.hidden = false;
       progress.value = 0;
       status.textContent = "Uploading…";
@@ -157,7 +162,12 @@
         status.textContent = "Upload failed.";
       });
 
-      request.send(new FormData(form));
+      request.addEventListener("loadend", () => {
+        fileInput.disabled = false;
+        uploadButton.disabled = false;
+      });
+
+      request.send(formData);
     });
 
     const textForm = document.querySelector("#text-form");
