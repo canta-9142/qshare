@@ -4,21 +4,18 @@ import (
 	"embed"
 	"html/template"
 	"net/http"
-
-	"github.com/canta-9142/qshare/internal/receive"
 )
 
-//go:embed web/common.html web/upload.html
+//go:embed web/upload.html
 var uploadWebFiles embed.FS
 
 var uploadPageTemplate = template.Must(
-	template.ParseFS(uploadWebFiles, "web/common.html", "web/upload.html"),
+	template.ParseFS(uploadWebFiles, "web/upload.html"),
 )
 
 type uploadPageData struct {
-	UploadURL     string
-	TextURL       string
-	MaxUploadSize int64
+	UploadURL string
+	TextURL   string
 }
 
 func (s *Server) uploadPage(w http.ResponseWriter, r *http.Request) {
@@ -39,9 +36,8 @@ func (s *Server) uploadPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 
 	data := uploadPageData{
-		UploadURL:     "/u/" + token.String(),
-		TextURL:       "/t/" + token.String(),
-		MaxUploadSize: receive.MaxFileSize,
+		UploadURL: "/u/" + token.String(),
+		TextURL:   "/t/" + token.String(),
 	}
 
 	if err := uploadPageTemplate.ExecuteTemplate(w, "upload.html", data); err != nil {
