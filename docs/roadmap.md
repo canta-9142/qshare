@@ -40,6 +40,12 @@ current behavior belongs in [requirements.md](requirements.md) and
 - Improved browser UI
 - Reorganized project documentation
 - Published Fedora COPR package
+- Installation script for Linux
+- Automatic firewall configuration for Linux
+
+### v0.7[Planed]: Reconstruct UI
+
+- Integration of upload and download modes into a single session 
 
 ## Planned
 
