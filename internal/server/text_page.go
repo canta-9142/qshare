@@ -6,11 +6,11 @@ import (
 	"net/http"
 )
 
-//go:embed web/text.html
+//go:embed web/common.html web/text.html
 var textWebFiles embed.FS
 
 var textPageTemplate = template.Must(
-	template.ParseFS(textWebFiles, "web/text.html"),
+	template.ParseFS(textWebFiles, "web/common.html", "web/text.html"),
 )
 
 type textPageData struct {

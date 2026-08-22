@@ -6,46 +6,10 @@
   <meta name="color-scheme" content="light dark">
   <title>Send Files - Qshare</title>
 
+  {{template "common-style" .}}
   <style>
-    :root {
-      font-family: system-ui, sans-serif;
-      color-scheme: light dark;
-    }
-
-    body {
-      margin: 0;
-      background: #fff;
-      color: #111;
-    }
-
-    main {
-      width: min(100% - 32px, 560px);
-      margin: 64px auto;
-    }
-
-    h1 {
-      margin: 0 0 40px;
-      font-size: 1.5rem;
-      font-weight: 600;
-    }
-
-    section {
-      border-top: 1px solid currentColor;
-      padding-top: 24px;
-    }
-
-    section + section {
-      margin-top: 48px;
-    }
-
-    h2 {
-      margin: 0 0 24px;
-      font-size: 1.125rem;
-    }
-
     input,
-    textarea,
-    button {
+    textarea {
       box-sizing: border-box;
       width: 100%;
       font: inherit;
@@ -62,64 +26,35 @@
       resize: vertical;
     }
 
-    button {
-      padding: 12px;
-      border: 1px solid currentColor;
-      border-radius: 0;
-      background: #111;
-      color: #fff;
-      cursor: pointer;
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
-    }
-
     progress {
       width: 100%;
       margin-top: 24px;
     }
 
-    .status {
-      min-height: 1.5em;
-      margin-top: 16px;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      body {
-        background: #111;
-        color: #eee;
-      }
-
-      button {
-        background: #eee;
-        color: #111;
-      }
-    }
   </style>
 </head>
 <body>
   <main>
+    <p class="brand">Qshare - Sharing Files and text</p>
     <h1>Send a file</h1>
 
-    <section>
+    <section class="section">
       <h2><label for="file">File</label></h2>
       <form id="upload" action="{{.UploadURL}}" method="post"
             enctype="multipart/form-data" data-max-upload-size="{{.MaxUploadSize}}">
         <input id="file" type="file" name="file" required>
-        <button type="submit">Upload</button>
+        <button class="action" type="submit">Upload</button>
       </form>
 
       <progress id="progress" max="100" value="0" aria-label="Upload progress" hidden></progress>
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
 
-    <section>
+    <section class="section">
       <h2>Text</h2>
       <form id="text-form" action="{{.TextURL}}" method="post">
         <textarea id="text" name="text" maxlength="1048576" required></textarea>
-        <button type="submit">Send text</button>
+        <button class="action" type="submit">Send text</button>
       </form>
       <p id="text-status" class="status" role="status" aria-live="polite"></p>
     </section>
