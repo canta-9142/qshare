@@ -71,6 +71,11 @@
       cursor: pointer;
     }
 
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
     progress {
       width: 100%;
       margin-top: 24px;
@@ -126,6 +131,7 @@
     const uploadButton = form.querySelector('button[type="submit"]');
     const progress = document.querySelector("#progress");
     const status = document.querySelector("#status");
+    const maxUploadSize = 1024 * 1024 * 1024;
 
     function formatBytes(bytes) {
       if (bytes < 1024) {
@@ -145,8 +151,33 @@
       return `${value.toFixed(1)} ${unit}`;
     }
 
+    function selectedFileIsTooLarge() {
+      const [file] = fileInput.files;
+      return file && file.size > maxUploadSize;
+    }
+
+    fileInput.addEventListener("change", () => {
+      if (selectedFileIsTooLarge()) {
+        uploadButton.disabled = true;
+        uploadButton.textContent = "Cannot upload";
+        status.textContent = "The file is too large. The maximum size is 1 GiB.";
+        return;
+      }
+
+      uploadButton.disabled = false;
+      uploadButton.textContent = "Upload";
+      status.textContent = "";
+    });
+
     form.addEventListener("submit", event => {
       event.preventDefault();
+
+      if (selectedFileIsTooLarge()) {
+        uploadButton.disabled = true;
+        uploadButton.textContent = "Cannot upload";
+        status.textContent = "The file is too large. The maximum size is 1 GiB.";
+        return;
+      }
 
       const formData = new FormData(form);
       const request = new XMLHttpRequest();
