@@ -1,355 +1,123 @@
 # Architecture
 
-## 1. Design objectives
+## Overview
 
-The implementation should remain small enough to understand as a command-line utility while preserving clear boundaries between:
-
-* CLI;
-* application orchestration;
-* sessions;
-* file transfer;
-* HTTP transport;
-* QR rendering;
-* clipboard integration;
-* platform networking.
-
-qshare should avoid both extremes:
-
-* a single `main.go` containing every responsibility;
-* an elaborate enterprise architecture for a small executable.
-
-## 2. High-level architecture
+qshare is a small layered CLI. The command entry point delegates to application
+orchestration, which coordinates narrow domain packages and adapters.
 
 ```text
 cmd/qshare
-    │
-    ▼
+    ↓
+internal/cli
+    ↓
 internal/app
-    │
-    ├─────────────┬─────────────┐
-    ▼             ▼             ▼
- session       transfer       bootstrap
-                  │
-                  ▼
-               server
-                  │
-                  ▼
-                HTTP
-
-       platform/network
-              │
-              ▼
-        OS integration
+    ├── session
+    ├── share
+    ├── receive
+    ├── server (HTTP adapter)
+    ├── qr (terminal adapter)
+    └── platform
+        ├── clipboard
+        └── network
 ```
 
-QR rendering is an output adapter used by application orchestration.
+Dependencies point inward: transport, terminal, and platform packages may use
+core types, but core session and resource logic must not depend on those
+adapters.
 
-## 3. Proposed repository structure
+## Package responsibilities
+
+### `cmd/qshare`
+
+Contains only process startup and exit delegation. It must not contain HTTP,
+filesystem authorization, or network-selection logic.
+
+### `internal/cli`
+
+Parses arguments and stdin, maps them to an `app.Request`, routes stdout and
+stderr, handles termination signals, and maps errors to exit codes.
+
+### `internal/app`
+
+Owns operation orchestration:
+
+1. open and validate resources;
+2. configure receive and platform adapters;
+3. determine the advertised LAN address;
+4. create a session and HTTP server;
+5. render the authenticated URL as a QR code;
+6. wait for expiration, a signal, or a server failure;
+7. close resources and drain or stop the server.
+
+Application code depends on constructors and interfaces so security-sensitive
+logic and lifecycle behavior remain testable.
+
+### `internal/session`
+
+Owns the session token, expiry, operation resources, and authorization checks.
+It has no HTTP, terminal, or OS-networking dependency.
+
+### `internal/share`
+
+Turns CLI-selected files, directories, and text into validated resources.
+Files and directory nodes receive opaque IDs. Directory sessions retain a
+startup-time authorization tree and filesystem identity for each included
+object.
+
+HTTP input resolves a token and opaque resource ID:
 
 ```text
-cmd/
-└── qshare/
-    └── main.go
-
-internal/
-├── app/
-│   └── app.go
-│
-├── session/
-│   ├── session.go
-│   └── token.go
-│
-├── share/
-│   ├── resource.go
-│   └── file.go
-│
-├── server/
-│   ├── server.go
-│   ├── download.go
-│   └── upload.go
-│
-├── qr/
-│   └── render.go
-│
-└── platform/
-    └── network/
-        ├── network.go
-        ├── linux.go
-        ├── windows.go
-        └── darwin.go
-
-web/
-├── index.html
-├── style.css
-└── app.js
-
-docs/
-└── ...
+CLI path → validated resource → session → opaque ID → HTTP lookup
 ```
 
-The exact package layout may evolve as actual responsibilities become clear.
-
-Do not create empty packages merely to match this diagram.
-
-## 4. `cmd/qshare`
-
-Responsibilities:
-
-* parse command-line arguments;
-* construct application dependencies;
-* invoke the application;
-* map final errors to CLI exit behavior.
-
-It should not contain:
-
-* HTTP handlers;
-* token algorithms;
-* filesystem authorization logic;
-* hotspot implementation;
-* significant business rules.
-
-## 5. Application layer
-
-`internal/app` coordinates a sharing session.
-
-Example responsibilities:
-
-1. validate requested operation;
-2. build a session;
-3. choose a network strategy;
-4. start the server;
-5. construct an access URL;
-6. render the QR code;
-7. wait for completion, cancellation, or expiration;
-8. shut everything down.
-
-For Phase 1, successful HTTP requests do not transition the session to a
-completed state. `GET`, `HEAD`, ranged requests, and retries are independent
-requests authorized by the same live session.
-
-The application layer may depend on interfaces implemented by adapters.
-
-## 6. Session package
-
-The session package owns session identity and authorization state.
-
-It should understand concepts such as:
-
-* token;
-* creation time;
-* expiration;
-* allowed resources;
-* session state.
-
-It should not depend on:
-
-* `net/http`;
-* terminal APIs;
-* QR libraries;
-* NetworkManager;
-* Windows APIs.
-
-## 7. Shared resources
-
-The server must not translate arbitrary client-controlled path strings into arbitrary filesystem access.
-
-At session creation time, requested files should be validated and converted into explicit share resources.
-
-HTTP routing should resolve only against those resources.
-
-Directory sessions likewise retain a validated, immutable authorization tree.
-Each node has an opaque ID and a startup-time filesystem identity. The tree
-contains relative hierarchy metadata for presentation and archive generation,
-but HTTP input is never interpreted as a relative or absolute local path.
-Before a directory file is served, the share adapter reopens and verifies the
-selected root, then reopens every child path component without following
-symbolic links and verifies the authorized object's filesystem identity.
-
-Conceptually:
+It must never become:
 
 ```text
-CLI path
-   ↓
-validation
-   ↓
-ShareResource
-   ↓
-Session
-   ↓
-opaque resource ID
-   ↓
-HTTP request
+HTTP input → local filesystem path
 ```
 
-not:
+### `internal/receive`
 
-```text
-HTTP path
-   ↓
-filesystem path
-```
+Publishes uploads safely inside one configured directory and serializes text
+submission processing. It owns size limits, collision naming, temporary-file
+cleanup, and text sinks.
 
-## 8. HTTP server
+### `internal/server`
 
-The HTTP server is an adapter around session and resource behavior.
+Adapts sessions and resources to `net/http`. It parses requests, authenticates
+tokens, maps errors to HTTP responses, escapes browser output, and streams
+files and ZIP archives. It does not decide which local paths are shareable.
 
-Responsibilities include:
+Browser templates are embedded from `internal/server/web`, keeping the binary
+self-contained.
 
-* request parsing;
-* authentication extraction;
-* response headers;
-* streaming bodies;
-* protocol-level error mapping.
+### Platform and output adapters
 
-Authorization decisions should remain explicit and testable.
+- `internal/platform/network` selects a usable Linux IPv4 LAN address.
+- `internal/platform/clipboard` invokes supported clipboard tools directly,
+  without a shell.
+- `internal/qr` renders an already constructed URL to the terminal; it does not
+  create credentials.
 
-Use standard Go HTTP primitives unless a concrete requirement justifies another dependency.
+Platform-specific behavior stays behind these package boundaries. Future OS
+support should use build-tagged files or explicit adapters rather than OS
+checks throughout core packages.
 
-## 9. Streaming
+## Lifecycle and streaming
 
-Large files must be transferred as streams.
+The application passes `context.Context` through cancellable work. File and ZIP
+responses stream data rather than buffering complete content. A normal download
+does not mutate or complete the session, so retries, `HEAD`, and range requests
+remain independent while the token is valid.
 
-Avoid:
+On expiration, the HTTP server drains for at most 30 seconds. Signal handling
+closes it immediately through the same application lifecycle. Reusable packages
+return errors instead of logging.
 
-```go
-data, err := os.ReadFile(path)
-```
+## Design constraints
 
-for normal file serving.
-
-Prefer an open file or equivalent reader whose contents are copied directly into the HTTP response.
-
-## 10. QR rendering
-
-QR rendering receives a final bootstrap payload, normally a URL or Wi-Fi bootstrap string.
-
-It must not independently construct security credentials.
-
-Token and URL construction belong elsewhere.
-
-The terminal renderer should write UI/status output to stderr unless CLI semantics require otherwise.
-
-## 11. Platform networking
-
-Platform-specific networking belongs behind an interface.
-
-Conceptually:
-
-```go
-type NetworkProvider interface {
-    Prepare(ctx context.Context, request Request) (Network, error)
-}
-```
-
-A resulting `Network` may expose:
-
-* local bind address;
-* public-to-peer URL address;
-* cleanup method or lifecycle tied to context.
-
-LAN discovery and Direct Mode are separate network strategies.
-
-OS-specific implementations must not leak into transfer/session packages.
-
-## 12. Received-text output and clipboard integration
-
-The application layer coordinates a serialized stream of browser text
-submissions. Receive mode selects a clipboard adapter automatically. If no
-supported adapter is available, it writes each value unchanged to stdout in
-submission order and prints the notice to stderr, so the stdout stream can be
-piped to another local command.
-
-Clipboard integration is a platform adapter selected by the CLI. Core text and
-session logic must not depend on `wl-copy`, `xclip`, `xsel`, or process APIs.
-
-Each browser text submission is a separate event. The application serializes
-these events in arrival order and invokes the selected backend once per event,
-passing text through standard input. The adapter must execute a known program
-directly and must not construct or invoke a shell command.
-
-## 13. Cancellation and cleanup
-
-Long-running operations must accept `context.Context`.
-
-SIGINT/SIGTERM handling belongs near the CLI/application boundary.
-
-Shutdown order should ensure that temporary resources are cleaned up.
-
-When a session expires, the server must stop accepting new requests while
-allowing requests already in progress up to 30 seconds to finish. When that
-drain period ends, the server closes any remaining transfers. SIGINT, SIGTERM,
-and fatal errors initiate shutdown through the same application-level lifecycle,
-although their final exit statuses differ as defined in `docs/cli.md`.
-
-Direct Mode eventually requires cleanup of:
-
-* HTTP server;
-* DHCP/DNS helpers if used;
-* hotspot;
-* temporary network configuration.
-
-Cleanup must be safe to call after partial initialization.
-
-## 14. Embedded Web UI
-
-Web assets should be bundled using Go's embedding support.
-
-The released executable should not require a neighboring `web/` directory.
-
-The Web UI should remain simple and should not introduce a heavy frontend build pipeline unless a concrete requirement emerges.
-
-Plain HTML/CSS and minimal JavaScript are preferred initially.
-
-## 15. Logging and output
-
-Reusable packages return errors rather than choosing user-facing wording.
-
-Application or CLI layers decide:
-
-* status output;
-* diagnostic output;
-* exit code.
-
-Avoid global loggers in core packages.
-
-## 16. Testing layers
-
-### Unit tests
-
-Prioritize pure behavior:
-
-* token handling;
-* expiration;
-* resource lookup;
-* path validation;
-* authorization;
-* filename sanitization;
-* text validation and size limits;
-* serialized text-submission handling;
-* clipboard backend selection and failure isolation.
-
-### HTTP tests
-
-Use `net/http/httptest` where appropriate.
-
-### Integration tests
-
-Test:
-
-* real streaming;
-* process cancellation;
-* LAN binding;
-* platform-specific network behavior.
-
-Direct Mode will require platform-dependent integration testing.
-
-## 17. Architectural invariants
-
-The following should remain true:
-
-1. session logic does not depend on HTTP;
-2. core logic does not depend on a specific OS;
-3. client input never directly selects an arbitrary filesystem path;
-4. large files are not fully buffered;
-5. normal operation requires no persistent daemon;
-6. release operation does not require external infrastructure.
+- Prefer the Go standard library where practical.
+- Avoid CGO and background daemons.
+- Keep HTTP types out of session and resource logic.
+- Keep network and clipboard integrations replaceable.
+- Add abstractions only for current behavior or a documented roadmap item.

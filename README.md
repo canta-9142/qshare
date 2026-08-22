@@ -1,255 +1,143 @@
-# qshare
+<div align="center">
+  <img width="216" height="216" alt="QR_426172" src="https://github.com/user-attachments/assets/0d5315b5-696f-43ad-9dbb-2b03894bb7f7" />
+  <h1>Qshare - Internet-free file sharing</h1>
+</div>
 
-**Share files with any phone by scanning a QR code. No app, no cloud, no account.**
+[![GitHub release](https://img.shields.io/github/v/release/canta-9142/qshare?logo=github)](https://github.com/canta-9142/qshare/releases)
+[![Go](https://img.shields.io/badge/Go-1.26-blue.svg?logo=go)](https://golang.org)
+[![Fedora Copr](https://img.shields.io/badge/fedora-copr-blue.svg?logo=fedora)](https://copr.fedorainfracloud.org/coprs/canta-9142/qshare)
+[![Nix Flake](https://img.shields.io/badge/nix-flake-5277C3?logo=nixos&logoColor=white)](flake.nix)
+[![CI](https://github.com/canta-9142/qshare/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/canta-9142/qshare/actions/workflows/ci.yml)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/canta-9142/qshare.svg?style=social&label=Stars)](https://github.com/canta-9142/qshare/stargazers)
 
-qshare is a local file-sharing CLI for transferring files between a computer and a smartphone or other browser-capable device.
+[ English | [日本語](README-ja.md) ]
 
-The receiving device does not need qshare or any other dedicated application. A camera, Wi-Fi, and a web browser are enough.
+Qshare is a file-sharing tool that uses QR codes to transfer files between a PC and a smartphone.
 
-```sh
-qshare photo.jpg
-```
+It has only two requirements:
 
-qshare starts a temporary local server and displays a QR code. Scan it with your phone and download the file in your browser.
+> - The PC and smartphone must be connected to the same LAN (tethering is also supported).
+> - Qshare must be running on the PC.
 
-The current LAN implementation listens on TCP port `55544`. If the host uses a
-firewall, allow inbound TCP traffic to that port from the trusted local network.
-qshare does not yet change firewall rules automatically.
-
-## Goals
-
-qshare is designed around a small set of principles:
-
-* Zero installation on the receiving device
-* No account or external service
-* No cloud upload
-* No Internet connection required
-* Direct transfer between devices
-* Minimal interaction
-* Temporary sharing sessions that leave no persistent service behind
-
-The intended interaction is:
-
-```text
-Share
-  ↓
-Scan
-  ↓
-Transfer
-```
-
-## Status
-
-qshare is currently under development.
-
-Currently implemented:
-
-* Linux
-* Local LAN operation
-* Single-file PC → phone transfer
-* Browser-based phone → PC file upload
-* QR-based access
-* Temporary authenticated sessions
-* Configurable session lifetime
-* Configurable receive directory
-* Safe upload naming, collision handling, and a 1 GiB request limit
-
-Later versions are planned to support:
-
-* Text sharing and per-submission clipboard integration
-* Multiple files
-* Directories
-* Windows
-* macOS
-
-Direct Mode using a temporary Wi-Fi hotspot remains a long-term design goal,
-but its implementation is currently deferred.
-
-See [`docs/roadmap.md`](docs/roadmap.md) for details.
+No smartphone app is required; everything works through the browser.
 
 ## Usage
 
-### Share a file
+<div align="center">
+  <img height="500" alt="PXL_20260822_200552174" src="https://github.com/user-attachments/assets/5f1577b8-738a-4d66-945a-6990a7d2ee1f" />
+  <img height="500" alt="Screenshot_20260823-042838" src="https://github.com/user-attachments/assets/46a5f6c8-d77b-4f70-9a13-4abc92ba2a2b" />
+</div>
+
+Run the appropriate command, then scan the displayed QR code with your smartphone.
+
+See the [CLI documentation](docs/cli.md) for details about each option.
+
+### Transfer files from a PC to a smartphone
 
 ```sh
-qshare photo.jpg
+qshare FILE...
 ```
 
-### Receive a file from another device
+`FILE` is the path of a file to transfer.
+
+You can specify multiple files or a single directory. All files can also be downloaded together as a ZIP archive.
+
+### Transfer text from a PC to a smartphone
+
+To provide text as an option:
+
+```sh
+qshare --text "Hello, World!"
+```
+
+To provide text through a pipe:
+
+```sh
+printf "Hello, World!" | qshare
+```
+
+As of v0.6, text and files cannot be shared at the same time. Support is planned for v0.7.
+
+### Transfer files or text from a smartphone to a PC
+
+Normally, start Qshare without any options:
 
 ```sh
 qshare
 ```
 
-When started without file arguments, qshare enters receive mode and exposes an
-upload page to the connected device. Received files are saved under
-`~/Downloads/qshare` by default. Use `--receive-dir DIR` to select another
-destination.
-
-### Share text
-
-Share UTF-8 text from stdin:
-
-```sh
-printf 'hello\n' | qshare
-```
-
-Or supply it explicitly:
-
-```sh
-qshare --text "hello"
-```
-
-In receive mode, text submitted from the browser is copied to the system
-clipboard using the first available Linux backend: `wl-copy`, `xclip`, then
-`xsel`. This is equivalent to:
-
-```sh
-qshare --clipboard auto
-```
-
-If none of these backends is installed, qshare prints a notice to stderr and
-writes submissions unchanged to stdout, so they can still be piped to another
-command:
-
-```sh
-qshare | COMMAND
-```
-
-A backend can be selected explicitly with `--clipboard wl-copy`, `--clipboard
-xclip`, or `--clipboard xsel`.
-
-## Network modes
-
-qshare is designed to support two network modes.
-
-### LAN Mode
-
-Uses an existing local network.
-
-```text
-Laptop ── Wi-Fi/LAN ── Smartphone
-```
-
-No Internet connection is required.
-
-### Direct Mode
-
-Deferred; no target release is currently assigned.
-
-If development resumes, Direct Mode is intended to create a temporary Wi-Fi
-network on the computer when no suitable LAN is available.
-
-```text
-Laptop
-  ├── Temporary Wi-Fi AP
-  ├── Local HTTP server
-  └── QR code
-           │
-         Wi-Fi
-           │
-      Smartphone
-```
-
-The phone still requires no qshare application.
-
-## Security model
-
-qshare is intended for temporary local transfers, not as a persistent file server.
-
-Sharing sessions use cryptographically secure random tokens and expose only explicitly shared resources.
-
-See [`docs/security.md`](docs/security.md) for the development security model and [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
+The `--clipboard auto` option is selected automatically. Text submitted from the smartphone is copied to the PC clipboard when a supported clipboard application is available.
 
 ## Installation
 
-Packaged builds for Fedora and Debian are published through the qshare Open
-Build Service (OBS) repository. This is a third-party repository and is not
-enabled by Fedora or Debian by default.
+### Fedora COPR
 
-### Fedora
-
-Fedora 43 and 44 are supported on x86_64 and aarch64. Add the repository that
-matches the installed Fedora release, then install qshare:
+Qshare is available as a package from Fedora COPR.
 
 ```sh
-fedora_version=$(rpm -E %fedora)
-sudo dnf config-manager addrepo \
-  --from-repofile="https://download.opensuse.org/repositories/home:/canta-9142/Fedora_${fedora_version}/home:canta-9142.repo"
+sudo dnf copr enable canta-9142/qshare
 sudo dnf install qshare
 ```
 
-### Debian
+See the [Copr repository](https://copr.fedorainfracloud.org/coprs/canta-9142/qshare/) for supported Fedora versions.
 
-Debian 13 is currently supported on amd64. Add the OBS signing key and package
-repository, then install qshare:
+### Arch Linux
 
-```sh
-sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL \
-  https://download.opensuse.org/repositories/home:/canta-9142/Debian_13/Release.key \
-  | sudo tee /etc/apt/keyrings/qshare-obs.asc >/dev/null
-echo "deb [signed-by=/etc/apt/keyrings/qshare-obs.asc] https://download.opensuse.org/repositories/home:/canta-9142/Debian_13/ /" \
-  | sudo tee /etc/apt/sources.list.d/qshare-obs.list >/dev/null
-sudo apt update
-sudo apt install qshare
-```
+Qshare cannot currently be installed from the AUR. (As of August 2026.)
 
-Packages in these OBS repositories do not make qshare available from an
-otherwise unmodified Fedora or Debian installation. Inclusion in the official
-distribution repositories requires each distribution's separate package review
-and submission process.
+An AUR package will be published when new account registration becomes available again.
 
-### Nix
+For now, follow the instructions for [other Linux distributions](#other-linux-distributions).
 
-On Linux amd64 or arm64, the Nix flake can build or run the current source tree:
+### NixOS
+
+Qshare supports Nix Flakes.
+
+Run the following command, or add the repository to the `inputs` in your `flake.nix`:
 
 ```sh
-nix build
-nix run . -- photo.jpg
+nix run github:canta-9142/qshare
 ```
 
-The current `main` branch can also be run directly without cloning it first:
+### Other Linux distributions
 
-```sh
-nix run github:canta-9142/qshare -- photo.jpg
-```
+Executable binaries are available from the latest release on the [GitHub Releases page](https://github.com/canta-9142/qshare/releases).
 
-### Build from source
+Packages for Debian, Raspbian, and Arch are available from the [Open Build Service](https://build.opensuse.org/package/show/home:canta-9142/qshare).
 
-Build the current development version with:
+You can also build Qshare from source:
 
 ```sh
 go build ./cmd/qshare
 ```
 
-The currently configured CI build targets are:
+A Linux installation script is planned for the near future.
 
-```text
-linux/amd64
-linux/arm64
-```
+### Other operating systems (Windows and macOS)
 
-Windows, macOS, and additional package-manager distribution are planned for later versions.
+Packages for Windows and macOS are not currently available.
 
-## Development
+Support is planned, but no release date has been set.
 
-qshare is written in Go.
+## Development and contributing
 
-```sh
-go test ./...
-go vet ./...
-go build ./cmd/qshare
-```
+Qshare is an open-source project written in Go.
 
-See [`docs/development.md`](docs/development.md).
+Contributions are welcome.
 
-## Contributing
-
-Contributions are welcome once the basic architecture has stabilized.
-
-Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before submitting a pull request.
+See [development.md](docs/development.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-See [`LICENSE`](LICENSE).
+See [LICENSE](LICENSE).
+
+## Author
+
+- [GitHub](https://github.com/canta-9142)
+- [Blog](https://floating-gate.com)
+
+---
+
+QR Code is a registered trademark of DENSO WAVE INCORPORATED.
