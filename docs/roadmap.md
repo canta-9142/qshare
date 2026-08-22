@@ -145,7 +145,7 @@ Tasks:
 
 * [ ] reorganize documentation
 * [x] remove unnecessary Linux dependencies
-* [ ] improve the Web UI
+* [x] improve the Web UI
 
 Distribution works:
 
