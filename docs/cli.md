@@ -99,17 +99,18 @@ In v0.3, the browser may submit UTF-8 text in receive mode. Each submission is
 limited to 1 MiB (1,048,576 bytes). Concurrent submissions are handled one at a
 time in arrival order.
 
-Clipboard integration may be enabled with:
+Receive mode enables clipboard integration by default, as if invoked with:
 
 ```sh
-qshare --clipboard BACKEND
+qshare --clipboard auto
 ```
 
 `BACKEND` is one of `auto`, `wl-copy`, `xclip`, or `xsel`. `auto` selects the
 first executable found in `PATH`, in the order `wl-copy`, `xclip`, then `xsel`.
-If `auto` finds none of them, startup fails with exit status `1`. An explicitly
-selected backend must also be found in `PATH` when qshare starts or startup
-fails with exit status `1`.
+If `auto` finds none of them, qshare prints a notice to stderr, continues the
+receive session, and writes submitted text to stdout. An explicitly selected
+backend must be found in `PATH` when qshare starts or startup fails with exit
+status `1`.
 
 qshare uses fixed arguments for backends that need them: `xclip -selection
 clipboard` and `xsel --clipboard --input`. `wl-copy` needs no fixed arguments.
@@ -119,10 +120,10 @@ For every received text submission, qshare starts the selected backend once and
 writes the text to its standard input. qshare invokes the executable directly,
 without a shell. A backend failure rejects that submission and is reported to
 the browser, but does not end the receive session or prevent later submissions.
-Without `--clipboard`, each received value is written unchanged to stdout in
-serialized submission order and is not copied to the system clipboard. qshare
-does not add separators between submissions; they form one ordinary byte stream
-that can be piped into another command. Status and diagnostic output remain on
+When automatic selection cannot find a backend, each received value is written
+unchanged to stdout in serialized submission order. qshare does not add
+separators between submissions; they form one ordinary byte stream that can be
+piped into another command. Status, notices, and diagnostic output remain on
 stderr.
 
 ## 4. Text send mode
@@ -170,7 +171,8 @@ Examples of stderr output:
 
 Examples of stdout output:
 
-* text received from the browser when `--clipboard` is not enabled;
+* text received from the browser when automatic clipboard selection cannot find
+  a backend;
 * future machine-readable output modes.
 
 This separation preserves shell composition.
@@ -229,8 +231,9 @@ qshare --text TEXT
 qshare --clipboard BACKEND
 ```
 
-`--text` selects text send mode. `--clipboard` selects receive mode and enables
-the per-submission clipboard behavior described in section 3.
+`--text` selects text send mode. `--clipboard` selects receive mode and chooses
+the per-submission clipboard backend described in section 3. Receive mode uses
+`auto` when the option is omitted.
 
 Future flags may include:
 
@@ -293,13 +296,14 @@ qshare --text "hello"
 ```
 
 Receive text and copy each submission to an automatically selected clipboard
-backend:
+backend (equivalent to plain `qshare`):
 
 ```sh
 qshare --clipboard auto
 ```
 
-Receive text as a composable stdout stream:
+If automatic selection reports that no supported backend is available, receive
+text as a composable stdout stream:
 
 ```sh
 qshare | COMMAND

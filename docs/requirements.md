@@ -310,31 +310,33 @@ submission is limited to 1 MiB. Concurrent submissions must be processed one at
 a time in arrival order, and the receive session must remain available for
 later submissions.
 
-The user may enable clipboard integration with `--clipboard BACKEND`, where
-`BACKEND` is `auto` or a supported backend name. Version 0.3 supports the Linux
-backends `wl-copy`, `xclip`, and `xsel`. Each received submission starts the
-selected executable once and supplies the text through standard input. The
-executable must be invoked directly without a shell. A backend failure fails
-only that submission and must not terminate the session.
+Receive mode enables clipboard integration with the equivalent of
+`--clipboard auto` when `--clipboard` is omitted. `BACKEND` may be `auto` or a
+supported backend name. Version 0.3 supports the Linux backends `wl-copy`,
+`xclip`, and `xsel`. Each received submission starts the selected executable
+once and supplies the text through standard input. The executable must be
+invoked directly without a shell. A backend failure fails only that submission
+and must not terminate the session.
 
 `auto` searches `PATH` in the order `wl-copy`, `xclip`, then `xsel`. If none of
-these executables is found, qshare must fail at startup with exit status `1`.
-Backend arguments are fixed by qshare: no arguments for `wl-copy`, `-selection
-clipboard` for `xclip`, and `--clipboard --input` for `xsel`. Version 0.3 does
-not accept user-defined executables or arguments.
+these executables is found, qshare must notify the user on stderr, continue the
+receive session, and write submitted text to stdout. Backend arguments are fixed
+by qshare: no arguments for `wl-copy`, `-selection clipboard` for `xclip`, and
+`--clipboard --input` for `xsel`. Version 0.3 does not accept user-defined
+executables or arguments.
 
-Without `--clipboard`, qshare writes the exact bytes of each received value to
-stdout in serialized submission order. It does not add separators or otherwise
-modify a submitted value. Consecutive submissions therefore form one ordinary
-stdout byte stream, allowing the user to pipe received text into an arbitrary
-local command. Status, QR, and diagnostic output remain on stderr.
+When automatic selection cannot find a clipboard backend, qshare writes the
+exact bytes of each received value to stdout in serialized submission order. It
+does not add separators or otherwise modify a submitted value. Consecutive
+submissions therefore form one ordinary stdout byte stream, allowing the user
+to pipe received text into an arbitrary local command. Status, QR, notices, and
+diagnostic output remain on stderr.
 
 Clipboard integration must remain behind an adapter; core text/session packages
-must not depend on a particular desktop clipboard implementation. A pipeline
-such as `qshare | COMMAND` remains supported for consumers that want the
-serialized stdout stream. `--clipboard` is distinct because it invokes the
-selected backend once per submission and can report a failure for that specific
-submission.
+must not depend on a particular desktop clipboard implementation. When no
+supported backend is available, a pipeline such as `qshare | COMMAND` receives
+the serialized stdout stream. A selected clipboard backend is invoked once per
+submission and can report a failure for that specific submission.
 
 ## 10. Network modes
 
@@ -580,8 +582,8 @@ Add:
 * explicit `--text` sharing;
 * browser text submission;
 * serialized per-submission handling;
-* optional per-submission Linux clipboard integration through
-  `--clipboard BACKEND`.
+* automatic per-submission Linux clipboard integration, with backend selection
+  configurable through `--clipboard BACKEND`.
 
 ### Phase 4 and later
 

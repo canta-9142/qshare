@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/platform/clipboard"
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
@@ -245,6 +246,57 @@ func TestApplicationRunReceiveModeUsesClipboardSink(t *testing.T) {
 	}
 	if got := clipboard.String(); got != "clipboard value" {
 		t.Errorf("clipboard sink = %q, want clipboard value", got)
+	}
+}
+
+func TestApplicationAutoClipboardMissingFallsBackToStdout(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
+	application := New(Dependencies{Stdout: &stdout, Stderr: &stderr})
+	application.advertiseAddress = func() (netip.Addr, error) {
+		return netip.MustParseAddr("192.0.2.10"), nil
+	}
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+			return receive.Result{}, nil
+		}), nil
+	}
+	application.newClipboardSink = func(backend string) (receive.TextSink, error) {
+		if backend != "auto" {
+			t.Fatalf("clipboard backend = %q, want auto", backend)
+		}
+		return nil, clipboard.ErrBackendNotFound
+	}
+	application.newReceiveServer = func(_ *session.Session, _ receiveStore, submitter textSubmitter) sessionServer {
+		text, err := share.NewText([]byte("fallback value"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := submitter.Submit(context.Background(), text); err != nil {
+			t.Fatal(err)
+		}
+		return fake
+	}
+	application.renderQR = func(io.Writer, string) error { return nil }
+
+	cause := errors.New("stop auto clipboard test")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	err := application.Run(ctx, Request{
+		Operation:  OperationReceive,
+		ReceiveDir: "/receive",
+		Clipboard:  "auto",
+		Lifetime:   time.Hour,
+	})
+	if !errors.Is(err, cause) {
+		t.Fatalf("Run() error = %v, want cancellation cause", err)
+	}
+	if got := stdout.String(); got != "fallback value" {
+		t.Errorf("stdout = %q, want fallback value", got)
+	}
+	if got := stderr.String(); !strings.Contains(got, "Clipboard backend not found") {
+		t.Errorf("stderr = %q, want missing-backend notice", got)
 	}
 }
 

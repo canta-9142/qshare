@@ -6,29 +6,8 @@
   <meta name="color-scheme" content="light dark">
   <title>Shared text - Qshare</title>
 
+  {{template "common-style" .}}
   <style>
-    :root {
-      font-family: system-ui, sans-serif;
-      color-scheme: light dark;
-    }
-
-    body {
-      margin: 0;
-      background: #fff;
-      color: #111;
-    }
-
-    main {
-      width: min(100% - 32px, 560px);
-      margin: 64px auto;
-    }
-
-    h1 {
-      margin: 0 0 40px;
-      font-size: 1.5rem;
-      font-weight: 600;
-    }
-
     .shared-text {
       margin: 0;
       padding: 24px 0;
@@ -38,45 +17,15 @@
       font: inherit;
     }
 
-    button {
-      box-sizing: border-box;
-      width: 100%;
-      margin-top: 24px;
-      padding: 12px;
-      border: 1px solid currentColor;
-      border-radius: 0;
-      background: #111;
-      color: #fff;
-      font: inherit;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    #status {
-      min-height: 1.5em;
-      margin: 16px 0 0;
-      font-size: 0.875rem;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      body {
-        background: #111;
-        color: #eee;
-      }
-
-      button {
-        background: #eee;
-        color: #111;
-      }
-    }
   </style>
 </head>
 <body>
   <main>
+    <p class="brand">Qshare</p>
     <h1>Shared text</h1>
     <pre id="shared-text" class="shared-text">{{.Text}}</pre>
-    <button id="copy" type="button">Copy</button>
-    <p id="status" role="status" aria-live="polite"></p>
+    <button id="copy" class="action" type="button">Copy</button>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
 
   <script>

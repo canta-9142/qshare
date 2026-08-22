@@ -176,6 +176,7 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 			Request: app.Request{
 				Operation:   app.OperationReceive,
 				ReceiveDir:  receiveDir,
+				Clipboard:   "auto",
 				NetworkMode: networkMode,
 				Lifetime:    args.Expire,
 			},

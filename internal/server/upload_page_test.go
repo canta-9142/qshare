@@ -25,14 +25,36 @@ func TestUploadPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAll() error = %v", err)
 	}
-	if uploadURL := "/u/" + sess.Token().String(); !strings.Contains(string(body), uploadURL) {
+	bodyText := string(body)
+	if uploadURL := "/u/" + sess.Token().String(); !strings.Contains(bodyText, uploadURL) {
 		t.Errorf("page does not contain authenticated upload URL %q", uploadURL)
 	}
-	if textURL := "/t/" + sess.Token().String(); !strings.Contains(string(body), textURL) {
+	if textURL := "/t/" + sess.Token().String(); !strings.Contains(bodyText, textURL) {
 		t.Errorf("page does not contain authenticated text URL %q", textURL)
 	}
-	if !strings.Contains(string(body), `id="text-form"`) {
+	if !strings.Contains(bodyText, `id="text-form"`) {
 		t.Error("page does not contain text submission form")
+	}
+	if !strings.Contains(bodyText, `<label for="file">File</label>`) {
+		t.Error("file input does not have an explicit label")
+	}
+	if !strings.Contains(bodyText, `<label for="text">Text</label>`) {
+		t.Error("text input does not have an explicit label")
+	}
+	if !strings.Contains(bodyText, `aria-label="Upload progress"`) {
+		t.Error("upload progress does not have an accessible name")
+	}
+	if !strings.Contains(bodyText, `data-max-upload-size="1073741824"`) {
+		t.Error("page does not contain the configured maximum upload size")
+	}
+	if !strings.Contains(bodyText, `data-max-text-size="1048576"`) {
+		t.Error("page does not contain the configured maximum text size")
+	}
+	if !strings.Contains(bodyText, `id="cancel-upload"`) || !strings.Contains(bodyText, "activeUpload.abort()") {
+		t.Error("page does not provide upload cancellation")
+	}
+	if !strings.Contains(bodyText, "new TextEncoder()") {
+		t.Error("page does not enforce the text limit in UTF-8 bytes")
 	}
 	for name, want := range map[string]string{
 		"Cache-Control":           "private, no-store",

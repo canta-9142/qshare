@@ -254,9 +254,10 @@ OS-specific implementations must not leak into transfer/session packages.
 ## 12. Received-text output and clipboard integration
 
 The application layer coordinates a serialized stream of browser text
-submissions. Without clipboard integration, it writes each value unchanged to
-stdout in submission order. Interactive and diagnostic output remain on
-stderr, so the stdout stream can be piped to another local command.
+submissions. Receive mode selects a clipboard adapter automatically. If no
+supported adapter is available, it writes each value unchanged to stdout in
+submission order and prints the notice to stderr, so the stdout stream can be
+piped to another local command.
 
 Clipboard integration is a platform adapter selected by the CLI. Core text and
 session logic must not depend on `wl-copy`, `xclip`, `xsel`, or process APIs.

@@ -8,10 +8,10 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-//go:embed web/directory.html
+//go:embed web/common.html web/directory.html
 var directoryWebFiles embed.FS
 
-var directoryTemplate = template.Must(template.ParseFS(directoryWebFiles, "web/directory.html"))
+var directoryTemplate = template.Must(template.ParseFS(directoryWebFiles, "web/common.html", "web/directory.html"))
 
 type directoryPageData struct {
 	Name        string
@@ -19,9 +19,14 @@ type directoryPageData struct {
 	Directories []directoryLinkData
 	Files       []directoryFileData
 	ArchiveURL  string
+	IsEmpty     bool
 }
 
-type directoryLinkData struct{ Name, URL string }
+type directoryLinkData struct {
+	Name    string
+	URL     string
+	Current bool
+}
 type directoryFileData struct{ Name, Size, URL string }
 
 func (s *Server) directoryRoot(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +70,11 @@ func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *shar
 		if current.Parent() == nil {
 			url = "/s/" + token
 		}
-		data.Breadcrumbs = append(data.Breadcrumbs, directoryLinkData{Name: current.Name(), URL: url})
+		data.Breadcrumbs = append(data.Breadcrumbs, directoryLinkData{
+			Name:    current.Name(),
+			URL:     url,
+			Current: current == node,
+		})
 	}
 	for _, child := range node.Children() {
 		if child.Kind() == share.NodeDirectory {
@@ -74,5 +83,6 @@ func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *shar
 			data.Files = append(data.Files, directoryFileData{Name: child.Name(), Size: formatFileSize(child.Size()), URL: "/d/" + token + "/" + string(child.ID())})
 		}
 	}
+	data.IsEmpty = len(data.Directories) == 0 && len(data.Files) == 0
 	_ = directoryTemplate.ExecuteTemplate(w, "directory.html", data)
 }
