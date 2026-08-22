@@ -13,6 +13,10 @@
       padding-top: 24px;
     }
 
+    .file + .file {
+      margin-top: 40px;
+    }
+
     .file-name,
     .file-size {
       margin: 0;
@@ -26,6 +30,17 @@
 
     .file-size {
       margin-top: 8px;
+      white-space: nowrap;
+    }
+
+    .archive {
+      margin-top: 40px;
+      padding-top: 24px;
+      border-top: 1px solid currentColor;
+    }
+
+    .archive .action {
+      margin-top: 0;
     }
 
     .notice {
@@ -39,7 +54,8 @@
 
 <body>
   <main>
-    <p class="brand">Qshare - Shared files</p>
+    <p class="brand">Qshare</p>
+    <h1>Shared files</h1>
 
     {{range .Files}}
     <section class="file">
@@ -48,7 +64,9 @@
       <a href="{{.URL}}" class="action">Download</a>
     </section>
     {{end}}
-    <a href="{{.ArchiveURL}}" class="action">Download all as ZIP</a>
+    <section class="archive" aria-label="Archive download">
+      <a href="{{.ArchiveURL}}" class="action secondary">Download all as ZIP</a>
+    </section>
     <p class="notice">These files are available temporarily.</p>
   </main>
 </body>

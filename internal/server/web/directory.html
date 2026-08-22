@@ -7,21 +7,33 @@
   <title>{{.Name}} - Qshare</title>
   {{template "common-style" .}}
   <style>
-    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
-    nav a, .entry { color: inherit; }
-    ul { list-style: none; margin: 32px 0; padding: 0; border-top: 1px solid currentColor; }
-    li { border-bottom: 1px solid currentColor; }
+    .breadcrumbs { margin-bottom: 24px; }
+    .breadcrumbs ol { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+    .breadcrumbs li { display: flex; min-width: 0; align-items: center; }
+    .breadcrumbs li + li::before { margin: 0 8px; content: "/"; }
+    .breadcrumbs a, .breadcrumbs [aria-current], .entry { color: inherit; overflow-wrap: anywhere; }
+    .entries { list-style: none; margin: 0 0 32px; padding: 0; border-top: 1px solid currentColor; }
+    .entries li { border-bottom: 1px solid currentColor; }
     .entry { display: flex; justify-content: space-between; gap: 16px; padding: 16px 0; text-decoration: none; }
     .name { overflow-wrap: anywhere; }
+    .size { flex: none; white-space: nowrap; }
+    .empty { margin: 0 0 32px; padding-block: 24px; border-block: 1px solid currentColor; }
   </style>
 </head>
 <body><main>
-  <p class="brand">Qshare - Shared files</p>
-  <nav aria-label="Breadcrumb">{{range .Breadcrumbs}}<a href="{{.URL}}">{{.Name}}</a><span>/</span>{{end}}</nav>
-  <ul>
+  <p class="brand">Qshare</p>
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <ol>{{range .Breadcrumbs}}<li>{{if .Current}}<span aria-current="page">{{.Name}}</span>{{else}}<a href="{{.URL}}">{{.Name}}</a>{{end}}</li>{{end}}</ol>
+  </nav>
+  <h1>{{.Name}}</h1>
+  {{if .IsEmpty}}
+  <p class="empty">This directory is empty.</p>
+  {{else}}
+  <ul class="entries">
     {{range .Directories}}<li><a class="entry" href="{{.URL}}"><span class="name">{{.Name}}/</span></a></li>{{end}}
-    {{range .Files}}<li><a class="entry" href="{{.URL}}"><span class="name">{{.Name}}</span><span>{{.Size}}</span></a></li>{{end}}
+    {{range .Files}}<li><a class="entry" href="{{.URL}}"><span class="name">{{.Name}}</span><span class="size">{{.Size}}</span></a></li>{{end}}
   </ul>
-  <a class="action" href="{{.ArchiveURL}}">Download directory as ZIP</a>
+  {{end}}
+  <a class="action secondary" href="{{.ArchiveURL}}">Download shared directory as ZIP</a>
 </main></body>
 </html>
