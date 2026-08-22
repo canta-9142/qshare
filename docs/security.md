@@ -110,4 +110,5 @@ go test ./...
 go vet ./...
 ```
 
-Report vulnerabilities according to [`SECURITY.md`](../SECURITY.md).
+Report vulnerabilities privately through
+[GitHub Security Advisories](https://github.com/canta-9142/qshare/security/advisories/new).

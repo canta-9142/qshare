@@ -121,5 +121,3 @@ return errors instead of logging.
 - Keep HTTP types out of session and resource logic.
 - Keep network and clipboard integrations replaceable.
 - Add abstractions only for current behavior or a documented roadmap item.
-
-Long-lived decisions are recorded under [`docs/adr`](adr/).
