@@ -71,6 +71,11 @@
       cursor: pointer;
     }
 
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
     progress {
       width: 100%;
       margin-top: 24px;
@@ -99,14 +104,14 @@
     <h1>Send a file</h1>
 
     <section>
-      <h2>File</h2>
+      <h2><label for="file">File</label></h2>
       <form id="upload" action="{{.UploadURL}}" method="post"
-            enctype="multipart/form-data">
+            enctype="multipart/form-data" data-max-upload-size="{{.MaxUploadSize}}">
         <input id="file" type="file" name="file" required>
         <button type="submit">Upload</button>
       </form>
 
-      <progress id="progress" max="100" value="0" hidden></progress>
+      <progress id="progress" max="100" value="0" aria-label="Upload progress" hidden></progress>
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
 
@@ -122,42 +127,140 @@
 
   <script>
     const form = document.querySelector("#upload");
+    const fileInput = document.querySelector("#file");
+    const uploadButton = form.querySelector('button[type="submit"]');
     const progress = document.querySelector("#progress");
     const status = document.querySelector("#status");
+    const maxUploadSize = Number(form.dataset.maxUploadSize);
+    const uploadErrorMessages = {
+      400: "The selected file could not be uploaded.",
+      404: "This sharing session has expired or is unavailable.",
+      413: "The file is too large. The maximum size is 1 GiB.",
+      500: "The file could not be saved on the computer.",
+    };
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) {
+        return `${Math.round(bytes)} B`;
+      }
+
+      const units = ["KiB", "MiB", "GiB"];
+      let value = bytes;
+      let unit = "B";
+      for (let index = 0; index < units.length; index++) {
+        value /= 1024;
+        unit = units[index];
+        if (value < 1024 || index === units.length - 1) {
+          break;
+        }
+      }
+      return `${value.toFixed(1)} ${unit}`;
+    }
+
+    function selectedFileIsTooLarge() {
+      const [file] = fileInput.files;
+      return Boolean(file && file.size > maxUploadSize);
+    }
+
+    function setUploadButton(text, disabled) {
+      uploadButton.textContent = text;
+      uploadButton.disabled = disabled;
+    }
+
+    function rejectOversizedFile() {
+      if (!selectedFileIsTooLarge()) {
+        return false;
+      }
+
+      setUploadButton("Cannot upload", true);
+      status.textContent = uploadErrorMessages[413];
+      return true;
+    }
+
+    function showUploadFailure(message) {
+      setUploadButton("Retry upload", false);
+      status.textContent = message;
+    }
+
+    function parseUploadResult(responseText) {
+      try {
+        const result = JSON.parse(responseText);
+        return typeof result.name === "string" && result.name !== "" ? result : null;
+      } catch {
+        return null;
+      }
+    }
+
+    fileInput.addEventListener("change", () => {
+      if (rejectOversizedFile()) {
+        return;
+      }
+
+      setUploadButton("Upload", false);
+      status.textContent = "";
+    });
 
     form.addEventListener("submit", event => {
       event.preventDefault();
 
+      if (rejectOversizedFile()) {
+        return;
+      }
+
+      const formData = new FormData(form);
       const request = new XMLHttpRequest();
       request.open("POST", form.action);
+      const uploadStartedAt = performance.now();
 
+      fileInput.disabled = true;
+      setUploadButton("Uploading…", true);
       progress.hidden = false;
       progress.value = 0;
       status.textContent = "Uploading…";
 
       request.upload.addEventListener("progress", event => {
+        const elapsedSeconds = (performance.now() - uploadStartedAt) / 1000;
+        const averageSpeed = elapsedSeconds > 0 ? event.loaded / elapsedSeconds : 0;
+
         if (event.lengthComputable) {
-          progress.value = event.loaded / event.total * 100;
+          const percentage = event.loaded / event.total * 100;
+          progress.value = percentage;
+          const transferred = `${formatBytes(event.loaded)} / ${formatBytes(event.total)}`;
+          status.textContent = `Uploading… ${Math.round(percentage)}% · ${transferred} · ${formatBytes(averageSpeed)}/s`;
+          return;
         }
+
+        status.textContent = `Uploading… ${formatBytes(event.loaded)} transferred · ${formatBytes(averageSpeed)}/s`;
       });
 
       request.addEventListener("load", () => {
         if (request.status !== 201) {
-          status.textContent = "Upload failed.";
+          const message = uploadErrorMessages[request.status] || "Upload failed. Please try again.";
+          showUploadFailure(message);
           return;
         }
 
-        const result = JSON.parse(request.responseText);
+        const result = parseUploadResult(request.responseText);
+        if (!result) {
+          showUploadFailure("The computer returned an invalid response. Please try again.");
+          return;
+        }
+        setUploadButton("Upload", false);
         status.textContent = `Saved as ${result.name}`;
         form.reset();
         progress.value = 100;
       });
 
       request.addEventListener("error", () => {
-        status.textContent = "Upload failed.";
+        showUploadFailure("The connection was lost. Check the network and try again.");
       });
 
-      request.send(new FormData(form));
+      request.addEventListener("loadend", () => {
+        fileInput.disabled = false;
+        uploadButton.disabled = false;
+      });
+
+      request.send(formData);
     });
 
     const textForm = document.querySelector("#text-form");
