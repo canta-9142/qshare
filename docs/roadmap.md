@@ -155,6 +155,12 @@ Distribution works:
 * [ ] Ubuntu Launchpad PPA
 * [ ] Nixpkgs
 
+## v0.7
+
+Tasks:
+
+* [ ] integration of upload and download modes into a single session
+
 ## v1+: Additional platforms and distribution
 
 Tasks:
