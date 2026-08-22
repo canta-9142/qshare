@@ -100,23 +100,24 @@ Or supply it explicitly:
 qshare --text "hello"
 ```
 
-In receive mode, text submitted from the browser is written unchanged to
-stdout. Submissions can therefore be piped to another command:
-
-```sh
-qshare | COMMAND
-```
-
-Clipboard integration can instead be enabled with automatic Linux backend
-selection:
+In receive mode, text submitted from the browser is copied to the system
+clipboard using the first available Linux backend: `wl-copy`, `xclip`, then
+`xsel`. This is equivalent to:
 
 ```sh
 qshare --clipboard auto
 ```
 
-Automatic selection checks `wl-copy`, `xclip`, then `xsel`. A backend can also
-be selected explicitly with `--clipboard wl-copy`, `--clipboard xclip`, or
-`--clipboard xsel`.
+If none of these backends is installed, qshare prints a notice to stderr and
+writes submissions unchanged to stdout, so they can still be piped to another
+command:
+
+```sh
+qshare | COMMAND
+```
+
+A backend can be selected explicitly with `--clipboard wl-copy`, `--clipboard
+xclip`, or `--clipboard xsel`.
 
 ## Network modes
 

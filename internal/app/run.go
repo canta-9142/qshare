@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/platform/clipboard"
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 )
@@ -193,10 +194,14 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		var err error
 		textSink, err = a.newClipboardSink(req.Clipboard)
 		if err != nil {
-			if errors.Is(err, ErrInvalidRequest) {
+			if req.Clipboard == "auto" && errors.Is(err, clipboard.ErrBackendNotFound) {
+				fmt.Fprintln(a.stderr, "Clipboard backend not found; received text will be written to stdout.")
+				textSink = receive.NewWriterTextSink(a.stdout)
+			} else if errors.Is(err, ErrInvalidRequest) {
 				return err
+			} else {
+				return fmt.Errorf("configure clipboard backend: %w", err)
 			}
-			return fmt.Errorf("configure clipboard backend: %w", err)
 		}
 	}
 

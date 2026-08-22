@@ -531,6 +531,9 @@ func TestMapArgumentsSelectsReceiveMode(t *testing.T) {
 		t.Errorf("ReceiveDir = %q, want %q",
 			result.Request.ReceiveDir, "/tmp/received")
 	}
+	if result.Request.Clipboard != "auto" {
+		t.Errorf("Clipboard = %q, want auto", result.Request.Clipboard)
+	}
 }
 
 func TestMapArgumentsRejectsReceiveDirInSendMode(t *testing.T) {
