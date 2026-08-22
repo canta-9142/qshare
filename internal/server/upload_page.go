@@ -8,11 +8,11 @@ import (
 	"github.com/canta-9142/qshare/internal/receive"
 )
 
-//go:embed web/upload.html
+//go:embed web/common.html web/upload.html
 var uploadWebFiles embed.FS
 
 var uploadPageTemplate = template.Must(
-	template.ParseFS(uploadWebFiles, "web/upload.html"),
+	template.ParseFS(uploadWebFiles, "web/common.html", "web/upload.html"),
 )
 
 type uploadPageData struct {
