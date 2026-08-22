@@ -1,4 +1,7 @@
-<h1 align="center">Qshare - Internet-free file sharing</h1>
+<div align="center">
+  <img width="216" height="216" alt="QR_426172" src="https://github.com/user-attachments/assets/0d5315b5-696f-43ad-9dbb-2b03894bb7f7" />
+  <h1>Qshare - Internet-free file sharing</h1>
+</div>
 
 [![GitHub release](https://img.shields.io/github/v/release/canta-9142/qshare?logo=github)](https://github.com/canta-9142/qshare/releases)
 [![Go](https://img.shields.io/badge/Go-1.26-blue.svg?logo=go)](https://golang.org)
@@ -21,6 +24,10 @@ It has only two requirements:
 No smartphone app is required; everything works through the browser.
 
 ## Usage
+
+<div align="center">
+  <img width="400" alt="Screenshot_20260823-042838" src="https://github.com/user-attachments/assets/46a5f6c8-d77b-4f70-9a13-4abc92ba2a2b" />
+</div>
 
 Run the appropriate command, then scan the displayed QR code with your smartphone.
 
