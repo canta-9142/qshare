@@ -6,29 +6,8 @@
   <meta name="color-scheme" content="light dark">
   <title>Shared files - Qshare</title>
 
+  {{template "common-style" .}}
   <style>
-    :root {
-      font-family: system-ui, sans-serif;
-      color-scheme: light dark;
-    }
-
-    body {
-      margin: 0;
-      background: #fff;
-      color: #111;
-    }
-
-    main {
-      width: min(100% - 32px, 560px);
-      margin: 64px auto;
-    }
-
-    h1 {
-      margin: 0 0 40px;
-      font-size: 1.5rem;
-      font-weight: 600;
-    }
-
     .file {
       border-top: 1px solid currentColor;
       padding-top: 24px;
@@ -49,53 +28,27 @@
       margin-top: 8px;
     }
 
-    .download {
-      box-sizing: border-box;
-      display: block;
-      width: 100%;
-      margin-top: 24px;
-      padding: 12px;
-      border: 1px solid currentColor;
-      border-radius: 0;
-      background: #111;
-      color: #fff;
-      font-weight: 600;
-      text-align: center;
-      text-decoration: none;
-    }
-
     .notice {
       margin: 24px 0 0;
       font-size: 0.875rem;
       line-height: 1.5;
     }
 
-    @media (prefers-color-scheme: dark) {
-      body {
-        background: #111;
-        color: #eee;
-      }
-
-      .download {
-        background: #eee;
-        color: #111;
-      }
-    }
   </style>
 </head>
 
 <body>
   <main>
-    <h1>Shared files</h1>
+    <p class="brand">Qshare - Shared files</p>
 
     {{range .Files}}
     <section class="file">
       <p class="file-name">{{.Name}}</p>
       <p class="file-size">{{.Size}}</p>
-      <a href="{{.URL}}" class="download">Download</a>
+      <a href="{{.URL}}" class="action">Download</a>
     </section>
     {{end}}
-    <a href="{{.ArchiveURL}}" class="download">Download all as ZIP</a>
+    <a href="{{.ArchiveURL}}" class="action">Download all as ZIP</a>
     <p class="notice">These files are available temporarily.</p>
   </main>
 </body>

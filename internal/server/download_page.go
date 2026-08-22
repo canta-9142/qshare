@@ -7,11 +7,11 @@ import (
 	"net/http"
 )
 
-//go:embed web/download.html
+//go:embed web/common.html web/download.html
 var webFiles embed.FS
 
 var downloadPage = template.Must(
-	template.ParseFS(webFiles, "web/download.html"),
+	template.ParseFS(webFiles, "web/common.html", "web/download.html"),
 )
 
 type downloadPageData struct {
