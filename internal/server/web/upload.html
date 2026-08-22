@@ -106,7 +106,7 @@
     <section>
       <h2><label for="file">File</label></h2>
       <form id="upload" action="{{.UploadURL}}" method="post"
-            enctype="multipart/form-data">
+            enctype="multipart/form-data" data-max-upload-size="{{.MaxUploadSize}}">
         <input id="file" type="file" name="file" required>
         <button type="submit">Upload</button>
       </form>
@@ -131,7 +131,13 @@
     const uploadButton = form.querySelector('button[type="submit"]');
     const progress = document.querySelector("#progress");
     const status = document.querySelector("#status");
-    const maxUploadSize = 1024 * 1024 * 1024;
+    const maxUploadSize = Number(form.dataset.maxUploadSize);
+    const uploadErrorMessages = {
+      400: "The selected file could not be uploaded.",
+      404: "This sharing session has expired or is unavailable.",
+      413: "The file is too large. The maximum size is 1 GiB.",
+      500: "The file could not be saved on the computer.",
+    };
 
     function formatBytes(bytes) {
       if (bytes < 1024) {
@@ -153,29 +159,51 @@
 
     function selectedFileIsTooLarge() {
       const [file] = fileInput.files;
-      return file && file.size > maxUploadSize;
+      return Boolean(file && file.size > maxUploadSize);
+    }
+
+    function setUploadButton(text, disabled) {
+      uploadButton.textContent = text;
+      uploadButton.disabled = disabled;
+    }
+
+    function rejectOversizedFile() {
+      if (!selectedFileIsTooLarge()) {
+        return false;
+      }
+
+      setUploadButton("Cannot upload", true);
+      status.textContent = uploadErrorMessages[413];
+      return true;
+    }
+
+    function showUploadFailure(message) {
+      setUploadButton("Retry upload", false);
+      status.textContent = message;
+    }
+
+    function parseUploadResult(responseText) {
+      try {
+        const result = JSON.parse(responseText);
+        return typeof result.name === "string" && result.name !== "" ? result : null;
+      } catch {
+        return null;
+      }
     }
 
     fileInput.addEventListener("change", () => {
-      if (selectedFileIsTooLarge()) {
-        uploadButton.disabled = true;
-        uploadButton.textContent = "Cannot upload";
-        status.textContent = "The file is too large. The maximum size is 1 GiB.";
+      if (rejectOversizedFile()) {
         return;
       }
 
-      uploadButton.disabled = false;
-      uploadButton.textContent = "Upload";
+      setUploadButton("Upload", false);
       status.textContent = "";
     });
 
     form.addEventListener("submit", event => {
       event.preventDefault();
 
-      if (selectedFileIsTooLarge()) {
-        uploadButton.disabled = true;
-        uploadButton.textContent = "Cannot upload";
-        status.textContent = "The file is too large. The maximum size is 1 GiB.";
+      if (rejectOversizedFile()) {
         return;
       }
 
@@ -185,8 +213,7 @@
       const uploadStartedAt = performance.now();
 
       fileInput.disabled = true;
-      uploadButton.disabled = true;
-      uploadButton.textContent = "Uploading…";
+      setUploadButton("Uploading…", true);
       progress.hidden = false;
       progress.value = 0;
       status.textContent = "Uploading…";
@@ -208,48 +235,24 @@
 
       request.addEventListener("load", () => {
         if (request.status !== 201) {
-          uploadButton.textContent = "Retry upload";
-          switch (request.status) {
-          case 400:
-            status.textContent = "The selected file could not be uploaded.";
-            break;
-          case 404:
-            status.textContent = "This sharing session has expired or is unavailable.";
-            break;
-          case 413:
-            status.textContent = "The file is too large. The maximum size is 1 GiB.";
-            break;
-          case 500:
-            status.textContent = "The file could not be saved on the computer.";
-            break;
-          default:
-            status.textContent = "Upload failed. Please try again.";
-          }
+          const message = uploadErrorMessages[request.status] || "Upload failed. Please try again.";
+          showUploadFailure(message);
           return;
         }
 
-        let result;
-        try {
-          result = JSON.parse(request.responseText);
-        } catch {
-          uploadButton.textContent = "Retry upload";
-          status.textContent = "The computer returned an invalid response. Please try again.";
+        const result = parseUploadResult(request.responseText);
+        if (!result) {
+          showUploadFailure("The computer returned an invalid response. Please try again.");
           return;
         }
-        if (typeof result.name !== "string" || result.name === "") {
-          uploadButton.textContent = "Retry upload";
-          status.textContent = "The computer returned an invalid response. Please try again.";
-          return;
-        }
-        uploadButton.textContent = "Upload";
+        setUploadButton("Upload", false);
         status.textContent = `Saved as ${result.name}`;
         form.reset();
         progress.value = 100;
       });
 
       request.addEventListener("error", () => {
-        uploadButton.textContent = "Retry upload";
-        status.textContent = "The connection was lost. Check the network and try again.";
+        showUploadFailure("The connection was lost. Check the network and try again.");
       });
 
       request.addEventListener("loadend", () => {
