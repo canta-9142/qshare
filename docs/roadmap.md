@@ -146,6 +146,8 @@ Tasks:
 * [ ] reorganize documentation
 * [x] remove unnecessary Linux dependencies
 * [x] improve the Web UI
+* [ ] add a installation script for Linux
+* [ ] automatic firewall configuration for Linux
 
 Distribution works:
 
