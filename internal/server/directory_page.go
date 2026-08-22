@@ -8,10 +8,10 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-//go:embed web/common.html web/directory.html
+//go:embed web/directory.html
 var directoryWebFiles embed.FS
 
-var directoryTemplate = template.Must(template.ParseFS(directoryWebFiles, "web/common.html", "web/directory.html"))
+var directoryTemplate = template.Must(template.ParseFS(directoryWebFiles, "web/directory.html"))
 
 type directoryPageData struct {
 	Name        string
