@@ -6,16 +6,39 @@ qshare is a local file-sharing CLI written in Go.
 
 Its primary purpose is to let a computer exchange files with a smartphone without requiring a dedicated application on the smartphone.
 
-Before making architectural or behavioral changes, read:
+Before changing behavior, read `docs/requirements.md` and the documents relevant
+to the change:
 
-* `docs/requirements.md`
-* `docs/architecture.md`
-* `docs/security.md`
-* `docs/cli.md`
+* architecture or package boundaries: `docs/architecture.md`;
+* HTTP, paths, uploads, tokens, archives, symlinks, or networking:
+  `docs/security.md`;
+* arguments, output streams, exit codes, signals, or defaults: `docs/cli.md`;
+* implementation scope or planned features: `docs/roadmap.md`.
 
-For implementation priorities, also read:
+## Change authorization
 
-* `docs/roadmap.md`
+Do not modify files when a task only asks for analysis, explanation, review, or
+suggestions. Make repository changes only when the task explicitly requests an
+implementation, fix, or documentation update.
+
+## Development environment
+
+Prefer the repository's pinned development environment:
+
+```sh
+nix develop
+```
+
+For non-interactive commands, run tools through the environment directly:
+
+```sh
+nix develop -c go test ./...
+nix develop -c go vet ./...
+```
+
+Nix is recommended but not required when the host already provides a compatible
+toolchain. Use `nix shell` instead of changing `flake.nix` for a tool that is
+likely to be needed only once.
 
 ## Development commands
 
@@ -40,10 +63,10 @@ go vet ./...
 Format changed Go files with:
 
 ```sh
-gofmt
+gofmt -w path/to/changed.go
 ```
 
-Before completing a task, run at minimum:
+Before completing an implementation task, run at minimum:
 
 ```sh
 go test ./...
@@ -51,15 +74,15 @@ go vet ./...
 ```
 
 Do not claim successful validation if these commands were not run successfully.
+If validation cannot be completed, report the exact command that failed or was
+not run and the reason.
 
 ## Scope discipline
 
-Implement only:
-
-1. behavior requested by the current task; and
-2. behavior already specified by the current roadmap phase.
-
-Do not proactively implement future roadmap phases.
+Implement only behavior requested by the current task and consistent with the
+documented current requirements. Roadmap entries marked as completed describe
+existing behavior that must be preserved. Entries marked as planned are not
+authorized for implementation unless the current task explicitly requests them.
 
 Do not add speculative abstractions solely for hypothetical future requirements.
 
