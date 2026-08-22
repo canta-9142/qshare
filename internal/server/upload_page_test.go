@@ -34,6 +34,12 @@ func TestUploadPage(t *testing.T) {
 	if !strings.Contains(string(body), `id="text-form"`) {
 		t.Error("page does not contain text submission form")
 	}
+	if !strings.Contains(string(body), `<label for="file">File</label>`) {
+		t.Error("file input does not have an explicit label")
+	}
+	if !strings.Contains(string(body), `aria-label="Upload progress"`) {
+		t.Error("upload progress does not have an accessible name")
+	}
 	for name, want := range map[string]string{
 		"Cache-Control":           "private, no-store",
 		"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'",

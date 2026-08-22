@@ -104,14 +104,14 @@
     <h1>Send a file</h1>
 
     <section>
-      <h2>File</h2>
+      <h2><label for="file">File</label></h2>
       <form id="upload" action="{{.UploadURL}}" method="post"
             enctype="multipart/form-data">
         <input id="file" type="file" name="file" required>
         <button type="submit">Upload</button>
       </form>
 
-      <progress id="progress" max="100" value="0" hidden></progress>
+      <progress id="progress" max="100" value="0" aria-label="Upload progress" hidden></progress>
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
 
