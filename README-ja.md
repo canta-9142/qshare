@@ -28,7 +28,8 @@ Qshareは、QRコードを使用したPC↔スマートフォン間のファイ�
 ## 使用手順
 
 <div align="center">
-  <img width="400" alt="Screenshot_20260823-042838" src="https://github.com/user-attachments/assets/46a5f6c8-d77b-4f70-9a13-4abc92ba2a2b" />
+  <img height="500" alt="PXL_20260822_200552174" src="https://github.com/user-attachments/assets/5f1577b8-738a-4d66-945a-6990a7d2ee1f" />
+  <img height="500" alt="Screenshot_20260823-042838" src="https://github.com/user-attachments/assets/46a5f6c8-d77b-4f70-9a13-4abc92ba2a2b" />
 </div>
 
 対応するコマンドを入力して、表示されるQRコードをスマートフォンで読み取ってください。
