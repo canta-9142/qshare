@@ -44,12 +44,34 @@ func TestDirectoryPageNavigationOrderingAndEscaping(t *testing.T) {
 	if strings.Contains(body, root) {
 		t.Fatal("page disclosed absolute path")
 	}
+	if !strings.Contains(body, `aria-current="page">shared-root</span>`) {
+		t.Fatal("page does not identify the current breadcrumb")
+	}
+	if !strings.Contains(body, "Download shared directory as ZIP") {
+		t.Fatal("page does not accurately label the shared-root archive")
+	}
 	child := directory.Root().Children()[0]
 	recorder = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/b/"+sess.Token().String()+"/"+string(child.ID()), nil)
 	srv.mux.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("child status = %d", recorder.Code)
+	}
+}
+
+func TestDirectoryPageDescribesEmptyDirectory(t *testing.T) {
+	srv, sess, _ := newDirectoryTestServer(t, t.TempDir())
+	recorder := httptest.NewRecorder()
+	srv.mux.ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil),
+	)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, "This directory is empty.") {
+		t.Fatal("empty directory does not have an explicit empty state")
 	}
 }
 
