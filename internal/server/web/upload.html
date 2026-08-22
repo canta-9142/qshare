@@ -186,6 +186,7 @@
 
       fileInput.disabled = true;
       uploadButton.disabled = true;
+      uploadButton.textContent = "Uploading…";
       progress.hidden = false;
       progress.value = 0;
       status.textContent = "Uploading…";
@@ -207,6 +208,7 @@
 
       request.addEventListener("load", () => {
         if (request.status !== 201) {
+          uploadButton.textContent = "Retry upload";
           switch (request.status) {
           case 400:
             status.textContent = "The selected file could not be uploaded.";
@@ -230,19 +232,23 @@
         try {
           result = JSON.parse(request.responseText);
         } catch {
+          uploadButton.textContent = "Retry upload";
           status.textContent = "The computer returned an invalid response. Please try again.";
           return;
         }
         if (typeof result.name !== "string" || result.name === "") {
+          uploadButton.textContent = "Retry upload";
           status.textContent = "The computer returned an invalid response. Please try again.";
           return;
         }
+        uploadButton.textContent = "Upload";
         status.textContent = `Saved as ${result.name}`;
         form.reset();
         progress.value = 100;
       });
 
       request.addEventListener("error", () => {
+        uploadButton.textContent = "Retry upload";
         status.textContent = "The connection was lost. Check the network and try again.";
       });
 
