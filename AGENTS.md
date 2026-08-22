@@ -23,22 +23,17 @@ implementation, fix, or documentation update.
 
 ## Development environment
 
-Prefer the repository's pinned development environment:
+qshare requires Go 1.24 or newer and Git. Confirm that the required tools are
+available before starting:
 
 ```sh
-nix develop
+go version
+git --version
 ```
 
-For non-interactive commands, run tools through the environment directly:
-
-```sh
-nix develop -c go test ./...
-nix develop -c go vet ./...
-```
-
-Nix is recommended but not required when the host already provides a compatible
-toolchain. Use `nix shell` instead of changing `flake.nix` for a tool that is
-likely to be needed only once.
+The complete development and validation workflow must remain usable with the Go
+toolchain directly. Do not require Nix, direnv, or another environment manager
+for ordinary development tasks.
 
 ## Development commands
 

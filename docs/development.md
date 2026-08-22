@@ -2,15 +2,15 @@
 
 ## Environment
 
-qshare requires Go 1.24 or newer and Git. The repository's Nix flake provides
-the pinned Go toolchain and development tools on Linux amd64 and arm64:
+qshare requires Go 1.24 or newer and Git. Confirm that both are available:
 
 ```sh
-nix develop
+go version
+git --version
 ```
 
-Nix is optional for building qshare, but is the recommended project development
-environment. The repository also supports direnv with nix-direnv.
+No environment manager or system-wide service is required. All development,
+testing, static analysis, and local builds use the standard Go toolchain.
 
 ## Common commands
 
@@ -27,15 +27,6 @@ go vet ./...
 
 # Format changed Go files
 gofmt -w path/to/changed.go
-```
-
-With Nix:
-
-```sh
-nix build
-nix run . -- FILE
-nix flake check
-nix fmt
 ```
 
 Before completing a change, `go test ./...` and `go vet ./...` must both pass.
@@ -92,11 +83,11 @@ linux/amd64
 linux/arm64
 ```
 
-The Nix flake builds a self-contained CGO-disabled binary. Open Build Service
-uses `qshare.spec` for RPM builds and `qshare.dsc` with the `debian.*` files for
-Debian builds. `PKGBUILD` contains the Arch recipe. Packaging should not become
-the only supported installation path; release binaries and source builds remain
-available.
+Release binaries are self-contained and built with CGO disabled. Open Build
+Service uses `qshare.spec` for RPM builds and `qshare.dsc` with the `debian.*`
+files for Debian builds. `PKGBUILD` contains the Arch recipe, and `flake.nix`
+provides Nix packaging. Packaging should not become the only supported
+installation path; release binaries and source builds remain available.
 
 ## Typical workflow
 
