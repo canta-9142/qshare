@@ -1,6 +1,6 @@
 # Requirements
 
-Version: 0.6
+Version: 0.6.1
 
 ## Purpose
 
