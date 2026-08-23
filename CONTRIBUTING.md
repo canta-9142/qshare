@@ -29,6 +29,15 @@ All committed Go code must be formatted with `gofmt`.
 CI additionally runs the test suite with the race detector and verifies the Nix
 flake. These checks do not change the standard Go development workflow.
 
+## Contribution workflow
+
+Fork the repository, then create a branch from the latest `main` branch in your
+fork and make your changes there. Once the change is ready, push the branch and
+open a pull request targeting the upstream `main` branch.
+
+Please use English for issues, pull request titles and descriptions, and review
+discussions.
+
 ## Pull requests
 
 Keep pull requests focused.
