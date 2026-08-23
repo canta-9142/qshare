@@ -60,10 +60,12 @@ The reserved future options `--direct` and `--once` are not implemented.
 
 ## Runtime behavior
 
-qshare listens on the selected LAN IPv4 address at TCP port `55544`. It does not
-modify firewall rules. Every mode prints a QR code and authenticated URL, then
-runs until the session expires, receives a termination signal, or encounters a
-fatal server error. A completed transfer does not end the session.
+qshare listens on the selected LAN IPv4 address at a random TCP port from
+`50000`–`59999`. If a candidate is already in use, it selects another one.
+Supported firewalls receive a temporary rule for the selected port. Every mode
+prints a QR code and authenticated URL, then runs until the session expires,
+receives a termination signal, or encounters a fatal server error. A completed
+transfer does not end the session.
 
 ## Output streams
 

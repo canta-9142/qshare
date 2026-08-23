@@ -16,11 +16,13 @@ cloud service, or device-management system.
 
 - Host: Linux on amd64 or arm64
 - Remote device: a modern browser on the same reachable LAN
-- Transport: local HTTP on TCP port `55544`
+- Transport: local HTTP on a randomly selected TCP port from `50000`–`59999`
 - Internet access: not required
 
-Automatic firewall configuration and Direct Mode (a temporary Wi-Fi hotspot)
-are not implemented. Windows and macOS host support are future work.
+qshare temporarily configures active firewalld installations and standard
+NixOS firewalls. Other firewall configurations may still require manual setup.
+Direct Mode (a temporary Wi-Fi hotspot) is not implemented. Windows and macOS
+host support are future work.
 
 ## Session behavior
 
