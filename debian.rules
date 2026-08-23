@@ -1,5 +1,7 @@
 #!/usr/bin/make -f
 
+include /usr/share/dpkg/pkg-info.mk
+
 export CGO_ENABLED := 0
 export GOPROXY := off
 export GOSUMDB := off
@@ -20,7 +22,9 @@ override_dh_auto_build:
 		tar -xzf "$$vendor_archive"; \
 		touch .vendor-from-obs; \
 	fi
-	go build -buildvcs=false -mod=vendor -trimpath -o qshare ./cmd/qshare
+	go build -buildvcs=false -mod=vendor -trimpath \
+		-ldflags "-X main.version=v$(DEB_VERSION_UPSTREAM)" \
+		-o qshare ./cmd/qshare
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))

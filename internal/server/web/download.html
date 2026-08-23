@@ -6,32 +6,15 @@
   <meta name="color-scheme" content="light dark">
   <title>Shared files - Qshare</title>
 
+  {{template "common-style" .}}
   <style>
-    :root {
-      font-family: system-ui, sans-serif;
-      color-scheme: light dark;
-    }
-
-    body {
-      margin: 0;
-      background: #fff;
-      color: #111;
-    }
-
-    main {
-      width: min(100% - 32px, 560px);
-      margin: 64px auto;
-    }
-
-    h1 {
-      margin: 0 0 40px;
-      font-size: 1.5rem;
-      font-weight: 600;
-    }
-
     .file {
       border-top: 1px solid currentColor;
       padding-top: 24px;
+    }
+
+    .file + .file {
+      margin-top: 40px;
     }
 
     .file-name,
@@ -47,21 +30,17 @@
 
     .file-size {
       margin-top: 8px;
+      white-space: nowrap;
     }
 
-    .download {
-      box-sizing: border-box;
-      display: block;
-      width: 100%;
-      margin-top: 24px;
-      padding: 12px;
-      border: 1px solid currentColor;
-      border-radius: 0;
-      background: #111;
-      color: #fff;
-      font-weight: 600;
-      text-align: center;
-      text-decoration: none;
+    .archive {
+      margin-top: 40px;
+      padding-top: 24px;
+      border-top: 1px solid currentColor;
+    }
+
+    .archive .action {
+      margin-top: 0;
     }
 
     .notice {
@@ -70,32 +49,24 @@
       line-height: 1.5;
     }
 
-    @media (prefers-color-scheme: dark) {
-      body {
-        background: #111;
-        color: #eee;
-      }
-
-      .download {
-        background: #eee;
-        color: #111;
-      }
-    }
   </style>
 </head>
 
 <body>
   <main>
+    <p class="brand">Qshare</p>
     <h1>Shared files</h1>
 
     {{range .Files}}
     <section class="file">
       <p class="file-name">{{.Name}}</p>
       <p class="file-size">{{.Size}}</p>
-      <a href="{{.URL}}" class="download">Download</a>
+      <a href="{{.URL}}" class="action">Download</a>
     </section>
     {{end}}
-    <a href="{{.ArchiveURL}}" class="download">Download all as ZIP</a>
+    <section class="archive" aria-label="Archive download">
+      <a href="{{.ArchiveURL}}" class="action secondary">Download all as ZIP</a>
+    </section>
     <p class="notice">These files are available temporarily.</p>
   </main>
 </body>

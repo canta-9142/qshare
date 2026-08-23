@@ -6,69 +6,35 @@
   <meta name="color-scheme" content="light dark">
   <title>Send Files - Qshare</title>
 
+  {{template "common-style" .}}
   <style>
-    :root {
-      font-family: system-ui, sans-serif;
-      color-scheme: light dark;
-    }
-
-    body {
-      margin: 0;
-      background: #fff;
-      color: #111;
-    }
-
-    main {
-      width: min(100% - 32px, 560px);
-      margin: 64px auto;
-    }
-
-    h1 {
-      margin: 0 0 40px;
-      font-size: 1.5rem;
-      font-weight: 600;
-    }
-
-    section {
-      border-top: 1px solid currentColor;
-      padding-top: 24px;
-    }
-
-    section + section {
-      margin-top: 48px;
-    }
-
-    h2 {
-      margin: 0 0 24px;
-      font-size: 1.125rem;
-    }
-
     input,
-    textarea,
-    button {
+    textarea {
       box-sizing: border-box;
       width: 100%;
       font: inherit;
     }
 
     input {
-      margin-bottom: 24px;
+      margin-bottom: 8px;
     }
 
     textarea {
       min-height: 160px;
-      margin-bottom: 24px;
+      margin-bottom: 8px;
       padding: 8px;
       resize: vertical;
     }
 
-    button {
-      padding: 12px;
-      border: 1px solid currentColor;
-      border-radius: 0;
-      background: #111;
-      color: #fff;
-      cursor: pointer;
+    .field-detail,
+    .progress-detail {
+      margin: 0;
+      color: #555;
+      font-size: 0.875rem;
+    }
+
+    .action + .action {
+      margin-top: 12px;
     }
 
     progress {
@@ -76,45 +42,47 @@
       margin-top: 24px;
     }
 
-    .status {
-      min-height: 1.5em;
-      margin-top: 16px;
+    .progress-detail {
+      margin-top: 8px;
     }
 
     @media (prefers-color-scheme: dark) {
-      body {
-        background: #111;
-        color: #eee;
-      }
-
-      button {
-        background: #eee;
-        color: #111;
+      .field-detail,
+      .progress-detail {
+        color: #bbb;
       }
     }
+
   </style>
 </head>
 <body>
   <main>
-    <h1>Send a file</h1>
+    <p class="brand">Qshare</p>
+    <h1>Send files and text</h1>
 
-    <section>
-      <h2>File</h2>
+    <section class="section">
+      <h2><label for="file">File</label></h2>
       <form id="upload" action="{{.UploadURL}}" method="post"
-            enctype="multipart/form-data">
-        <input id="file" type="file" name="file" required>
-        <button type="submit">Upload</button>
+            enctype="multipart/form-data" data-max-upload-size="{{.MaxUploadSize}}">
+        <input id="file" type="file" name="file" aria-describedby="file-limit" required>
+        <p id="file-limit" class="field-detail">Maximum size: {{.MaxUploadSizeText}}</p>
+        <button class="action" type="submit">Upload</button>
+        <button id="cancel-upload" class="action secondary" type="button" hidden>Cancel upload</button>
       </form>
 
-      <progress id="progress" max="100" value="0" hidden></progress>
+      <progress id="progress" max="100" value="0" aria-label="Upload progress"
+                aria-describedby="progress-detail" hidden></progress>
+      <p id="progress-detail" class="progress-detail"></p>
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </section>
 
-    <section>
-      <h2>Text</h2>
-      <form id="text-form" action="{{.TextURL}}" method="post">
-        <textarea id="text" name="text" maxlength="1048576" required></textarea>
-        <button type="submit">Send text</button>
+    <section class="section">
+      <h2><label for="text">Text</label></h2>
+      <form id="text-form" action="{{.TextURL}}" method="post"
+            data-max-text-size="{{.MaxTextSize}}">
+        <textarea id="text" name="text" aria-describedby="text-limit" required></textarea>
+        <p id="text-limit" class="field-detail">Maximum size: {{.MaxTextSizeText}}</p>
+        <button class="action" type="submit">Send text</button>
       </form>
       <p id="text-status" class="status" role="status" aria-live="polite"></p>
     </section>
@@ -122,50 +90,229 @@
 
   <script>
     const form = document.querySelector("#upload");
+    const fileInput = document.querySelector("#file");
+    const uploadButton = form.querySelector('button[type="submit"]');
+    const cancelUploadButton = document.querySelector("#cancel-upload");
     const progress = document.querySelector("#progress");
+    const progressDetail = document.querySelector("#progress-detail");
     const status = document.querySelector("#status");
+    const maxUploadSize = Number(form.dataset.maxUploadSize);
+    let activeUpload = null;
+    const uploadErrorMessages = {
+      400: "The selected file could not be uploaded.",
+      404: "This sharing session has expired or is unavailable.",
+      500: "The file could not be saved on the computer.",
+    };
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) {
+        return `${Math.round(bytes)} B`;
+      }
+
+      const units = ["KiB", "MiB", "GiB"];
+      let value = bytes;
+      let unit = "B";
+      for (let index = 0; index < units.length; index++) {
+        value /= 1024;
+        unit = units[index];
+        if (value < 1024 || index === units.length - 1) {
+          break;
+        }
+      }
+      return `${value.toFixed(1)} ${unit}`;
+    }
+
+    function uploadErrorMessage(statusCode) {
+      if (statusCode === 413) {
+        return `The file is too large. The maximum size is ${formatBytes(maxUploadSize)}.`;
+      }
+      return uploadErrorMessages[statusCode] || "Upload failed. Please try again.";
+    }
+
+    function selectedFileIsTooLarge() {
+      const [file] = fileInput.files;
+      return Boolean(file && file.size > maxUploadSize);
+    }
+
+    function setUploadButton(text, disabled) {
+      uploadButton.textContent = text;
+      uploadButton.disabled = disabled;
+    }
+
+    function rejectOversizedFile() {
+      if (!selectedFileIsTooLarge()) {
+        return false;
+      }
+
+      setUploadButton("Cannot upload", true);
+      status.textContent = uploadErrorMessage(413);
+      return true;
+    }
+
+    function showUploadFailure(message) {
+      setUploadButton("Retry upload", false);
+      progress.hidden = true;
+      progressDetail.textContent = "";
+      status.textContent = message;
+    }
+
+    function setUploadRunning(running) {
+      fileInput.disabled = running;
+      uploadButton.disabled = running;
+      cancelUploadButton.hidden = !running;
+      cancelUploadButton.disabled = false;
+    }
+
+    function resetUploadProgress() {
+      progress.hidden = true;
+      progress.value = 0;
+      progressDetail.textContent = "";
+    }
+
+    function parseUploadResult(responseText) {
+      try {
+        const result = JSON.parse(responseText);
+        return typeof result.name === "string" && result.name !== "" ? result : null;
+      } catch {
+        return null;
+      }
+    }
+
+    fileInput.addEventListener("change", () => {
+      if (rejectOversizedFile()) {
+        return;
+      }
+
+      setUploadButton("Upload", false);
+      resetUploadProgress();
+      status.textContent = "";
+    });
 
     form.addEventListener("submit", event => {
       event.preventDefault();
 
+      if (activeUpload || rejectOversizedFile()) {
+        return;
+      }
+
+      const formData = new FormData(form);
       const request = new XMLHttpRequest();
       request.open("POST", form.action);
+      const uploadStartedAt = performance.now();
+      activeUpload = request;
 
+      setUploadRunning(true);
+      setUploadButton("Uploading…", true);
       progress.hidden = false;
       progress.value = 0;
+      progressDetail.textContent = "0 B transferred";
       status.textContent = "Uploading…";
 
       request.upload.addEventListener("progress", event => {
+        const elapsedSeconds = (performance.now() - uploadStartedAt) / 1000;
+        const averageSpeed = elapsedSeconds > 0 ? event.loaded / elapsedSeconds : 0;
+
         if (event.lengthComputable) {
-          progress.value = event.loaded / event.total * 100;
+          const percentage = event.loaded / event.total * 100;
+          progress.value = percentage;
+          const transferred = `${formatBytes(event.loaded)} / ${formatBytes(event.total)}`;
+          progressDetail.textContent = `${Math.round(percentage)}% · ${transferred} · ${formatBytes(averageSpeed)}/s`;
+          return;
         }
+
+        progress.removeAttribute("value");
+        progressDetail.textContent = `${formatBytes(event.loaded)} transferred · ${formatBytes(averageSpeed)}/s`;
       });
 
       request.addEventListener("load", () => {
         if (request.status !== 201) {
-          status.textContent = "Upload failed.";
+          showUploadFailure(uploadErrorMessage(request.status));
           return;
         }
 
-        const result = JSON.parse(request.responseText);
+        const result = parseUploadResult(request.responseText);
+        if (!result) {
+          showUploadFailure("The computer returned an invalid response. Please try again.");
+          return;
+        }
+        setUploadButton("Upload", false);
         status.textContent = `Saved as ${result.name}`;
         form.reset();
         progress.value = 100;
+        progressDetail.textContent = "Upload complete.";
       });
 
       request.addEventListener("error", () => {
-        status.textContent = "Upload failed.";
+        showUploadFailure("The connection was lost. Check the network and try again.");
       });
 
-      request.send(new FormData(form));
+      request.addEventListener("abort", () => {
+        setUploadButton("Upload", false);
+        resetUploadProgress();
+        status.textContent = "Upload canceled.";
+      });
+
+      request.addEventListener("loadend", () => {
+        activeUpload = null;
+        setUploadRunning(false);
+      });
+
+      request.send(formData);
+    });
+
+    cancelUploadButton.addEventListener("click", () => {
+      if (!activeUpload) {
+        return;
+      }
+      cancelUploadButton.disabled = true;
+      status.textContent = "Canceling…";
+      activeUpload.abort();
     });
 
     const textForm = document.querySelector("#text-form");
     const textInput = document.querySelector("#text");
+    const textButton = textForm.querySelector('button[type="submit"]');
+    const textLimit = document.querySelector("#text-limit");
     const textStatus = document.querySelector("#text-status");
+    const maxTextSize = Number(textForm.dataset.maxTextSize);
+    let textSubmitting = false;
+    const textErrorMessages = {
+      400: "The text is invalid and could not be sent.",
+      404: "This sharing session has expired or is unavailable.",
+      413: `The text is too large. The maximum size is ${formatBytes(maxTextSize)}.`,
+      500: "The computer could not process the text.",
+    };
+
+    function textByteLength() {
+      return new TextEncoder().encode(textInput.value).byteLength;
+    }
+
+    function renderTextLimit() {
+      const size = textByteLength();
+      textLimit.textContent = `${formatBytes(size)} / ${formatBytes(maxTextSize)} maximum`;
+      return size > maxTextSize;
+    }
+
+    textInput.addEventListener("input", () => {
+      const tooLarge = renderTextLimit();
+      textButton.disabled = tooLarge;
+      textStatus.textContent = tooLarge ? textErrorMessages[413] : "";
+    });
 
     textForm.addEventListener("submit", async event => {
       event.preventDefault();
+
+      if (textSubmitting) {
+        return;
+      }
+      if (renderTextLimit()) {
+        textButton.disabled = true;
+        textStatus.textContent = textErrorMessages[413];
+        return;
+      }
+
+      textSubmitting = true;
+      textButton.disabled = true;
       textStatus.textContent = "Sending…";
 
       try {
@@ -175,14 +322,21 @@
           body: textInput.value,
         });
         if (!response.ok) {
-          throw new Error("submission failed");
+          textStatus.textContent = textErrorMessages[response.status] || "Text submission failed. Please try again.";
+          return;
         }
         textStatus.textContent = "Text sent.";
         textForm.reset();
+        renderTextLimit();
       } catch {
-        textStatus.textContent = "Text submission failed.";
+        textStatus.textContent = "The connection was lost. Check the network and try again.";
+      } finally {
+        textSubmitting = false;
+        textButton.disabled = renderTextLimit();
       }
     });
+
+    renderTextLimit();
   </script>
 </body>
 </html>

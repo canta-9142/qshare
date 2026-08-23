@@ -4,12 +4,14 @@ Thank you for contributing to qshare.
 
 qshare aims to remain a small, understandable tool rather than becoming a general-purpose synchronization platform.
 
-Before making a significant change, please read:
+Before making a change, read `docs/requirements.md` and the documents relevant
+to the change:
 
-* `docs/requirements.md`
-* `docs/architecture.md`
-* `docs/security.md`
-* `docs/roadmap.md`
+* architecture or package boundaries: `docs/architecture.md`;
+* HTTP, paths, uploads, tokens, archives, symlinks, or networking:
+  `docs/security.md`;
+* arguments, output streams, exit codes, signals, or defaults: `docs/cli.md`;
+* implementation scope or planned features: `docs/roadmap.md`.
 
 ## Development setup
 
@@ -23,6 +25,9 @@ go vet ./...
 ```
 
 All committed Go code must be formatted with `gofmt`.
+
+CI additionally runs the test suite with the race detector and verifies the Nix
+flake. These checks do not change the standard Go development workflow.
 
 ## Pull requests
 
@@ -60,7 +65,7 @@ Platform-specific behavior may require integration tests.
 
 Detailed conventions for test packages, table-driven tests, helpers, fixtures,
 HTTP tests, and opt-in integration tests are documented in
-[`docs/development.md`](docs/development.md#14-testing-strategy).
+[`docs/development.md`](docs/development.md#testing).
 
 ## Dependencies
 
@@ -81,10 +86,9 @@ Dependencies that add any of the following require particular justification:
 
 Respect package boundaries described in `docs/architecture.md`.
 
-If a proposed change significantly changes those boundaries, write or update an ADR.
-
 ## Security issues
 
 Do not report security vulnerabilities in a public issue.
 
-Follow [`SECURITY.md`](SECURITY.md).
+Report them privately through
+[GitHub Security Advisories](https://github.com/canta-9142/qshare/security/advisories/new).

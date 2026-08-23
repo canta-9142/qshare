@@ -30,7 +30,9 @@ type TextProcessor struct {
 	cancel      context.CancelFunc
 	submissions chan textSubmission
 	done        chan struct{}
-	closeOnce   sync.Once
+	stopOnce    sync.Once
+	acceptMu    sync.RWMutex
+	accepting   bool
 }
 
 func NewTextProcessor(sink TextSink, capacity int) *TextProcessor {
@@ -44,6 +46,7 @@ func NewTextProcessor(sink TextSink, capacity int) *TextProcessor {
 		cancel:      cancel,
 		submissions: make(chan textSubmission, capacity),
 		done:        make(chan struct{}),
+		accepting:   true,
 	}
 	go processor.run(sink)
 	return processor
@@ -53,13 +56,22 @@ func (p *TextProcessor) Submit(ctx context.Context, text share.Text) error {
 	result := make(chan error, 1)
 	submission := textSubmission{text: text, result: result}
 
+	p.acceptMu.RLock()
+	if !p.accepting {
+		p.acceptMu.RUnlock()
+		return ErrTextProcessorClosed
+	}
+
 	select {
 	case p.submissions <- submission:
 	case <-ctx.Done():
+		p.acceptMu.RUnlock()
 		return context.Cause(ctx)
 	case <-p.ctx.Done():
+		p.acceptMu.RUnlock()
 		return ErrTextProcessorClosed
 	}
+	p.acceptMu.RUnlock()
 
 	select {
 	case err := <-result:
@@ -71,9 +83,28 @@ func (p *TextProcessor) Submit(ctx context.Context, text share.Text) error {
 	}
 }
 
-func (p *TextProcessor) Close() {
-	p.closeOnce.Do(p.cancel)
+// Shutdown stops accepting submissions and waits for accepted submissions to
+// finish processing.
+func (p *TextProcessor) Shutdown() {
+	p.stopAccepting()
 	<-p.done
+}
+
+// Close cancels processing, stops accepting submissions, and waits for the
+// processor to stop. Accepted submissions are not guaranteed to be processed.
+func (p *TextProcessor) Close() {
+	p.cancel()
+	p.stopAccepting()
+	<-p.done
+}
+
+func (p *TextProcessor) stopAccepting() {
+	p.stopOnce.Do(func() {
+		p.acceptMu.Lock()
+		p.accepting = false
+		close(p.submissions)
+		p.acceptMu.Unlock()
+	})
 }
 
 func (p *TextProcessor) run(sink TextSink) {
@@ -81,7 +112,10 @@ func (p *TextProcessor) run(sink TextSink) {
 
 	for {
 		select {
-		case submission := <-p.submissions:
+		case submission, ok := <-p.submissions:
+			if !ok {
+				return
+			}
 			err := sink.WriteText(p.ctx, submission.text)
 			submission.result <- err
 		case <-p.ctx.Done():

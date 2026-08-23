@@ -2,13 +2,16 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
+	"math/big"
 	"net"
-	"net/netip"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/platform/clipboard"
+	"github.com/canta-9142/qshare/internal/platform/firewall"
 	"github.com/canta-9142/qshare/internal/platform/network"
 	"github.com/canta-9142/qshare/internal/qr"
 	"github.com/canta-9142/qshare/internal/receive"
@@ -17,9 +20,14 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
+// Server port and shutdown constants define the LAN session lifecycle bounds.
 const (
-	defaultServerPort      = "55544"
+	minimumServerPort      = 50000
+	serverPortCount        = 10000
+	serverPortAttempts     = 32
 	expirationDrainTimeout = 30 * time.Second
+	firewallCleanupTimeout = 5 * time.Second
+	firewallTimeoutSlack   = 5 * time.Second
 )
 
 type shutdownServer interface {
@@ -37,10 +45,18 @@ type receiveStore interface {
 	Save(context.Context, string, io.Reader) (receive.Result, error)
 }
 
+// firewallLease is the application-facing subset of a temporary firewall lease.
+type firewallLease interface {
+	Close(context.Context) error
+}
+
 type Application struct {
 	stderr             io.Writer
 	stdout             io.Writer
-	advertiseAddress   func() (netip.Addr, error)
+	shutdownRequested  <-chan struct{}
+	advertiseEndpoint  func() (network.Endpoint, error)
+	selectServerPort   func() (uint16, error)
+	openFirewall       func(context.Context, firewall.Rule) (firewallLease, error)
 	newSendServer      func(*session.Session) sessionServer
 	newDirectoryServer func(*session.Session) sessionServer
 	newTextServer      func(*session.Session) sessionServer
@@ -53,12 +69,22 @@ type Application struct {
 }
 
 type Dependencies struct {
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdout            io.Writer
+	Stderr            io.Writer
+	ShutdownRequested <-chan struct{}
 }
 
 type textSubmitter interface {
 	Submit(context.Context, share.Text) error
+}
+
+// randomServerPort selects a uniformly distributed port from the configured range.
+func randomServerPort() (uint16, error) {
+	offset, err := rand.Int(rand.Reader, big.NewInt(serverPortCount))
+	if err != nil {
+		return 0, fmt.Errorf("select random server port: %w", err)
+	}
+	return uint16(minimumServerPort + offset.Int64()), nil
 }
 
 func New(deps Dependencies) *Application {
@@ -67,9 +93,14 @@ func New(deps Dependencies) *Application {
 		stdout = io.Discard
 	}
 	return &Application{
-		stdout:             stdout,
-		stderr:             deps.Stderr,
-		advertiseAddress:   network.AdvertiseAddress,
+		stdout:            stdout,
+		stderr:            deps.Stderr,
+		shutdownRequested: deps.ShutdownRequested,
+		advertiseEndpoint: network.AdvertiseEndpoint,
+		selectServerPort:  randomServerPort,
+		openFirewall: func(ctx context.Context, rule firewall.Rule) (firewallLease, error) {
+			return firewall.Open(ctx, rule)
+		},
 		newSendServer:      func(s *session.Session) sessionServer { return server.NewSendFile(s) },
 		newDirectoryServer: func(s *session.Session) sessionServer { return server.NewSendDirectory(s) },
 		newTextServer:      func(s *session.Session) sessionServer { return server.NewSendText(s) },

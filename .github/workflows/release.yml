@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Test, vet, and race
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate release tag
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "release tag must be a stable semantic version such as v0.7.0" >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.6"
+          cache-dependency-path: go.sum
+
+      - name: Test installer
+        run: sh tests/install_test.sh
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+  build:
+    name: Build Linux ${{ matrix.goarch }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch:
+          - amd64
+          - arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.6"
+          cache-dependency-path: go.sum
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          go build \
+            -trimpath \
+            -ldflags "-X main.version=${VERSION}" \
+            -o "dist/qshare-linux-${GOARCH}" \
+            ./cmd/qshare
+
+      - name: Verify version
+        if: matrix.goarch == 'amd64'
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: test "$(dist/qshare-linux-amd64 --version)" = "qshare ${VERSION}"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-qshare-linux-${{ matrix.goarch }}
+          path: dist/qshare-linux-${{ matrix.goarch }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-qshare-linux-*
+          path: dist
+          merge-multiple: true
+
+      - name: Add installer
+        run: install -m 0755 install.sh dist/install.sh
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum install.sh qshare-linux-amd64 qshare-linux-arm64 > checksums.txt
+
+      - name: Create draft release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/install.sh \
+            dist/qshare-linux-amd64 \
+            dist/qshare-linux-arm64 \
+            dist/checksums.txt \
+            --draft \
+            --generate-notes \
+            --title "qshare ${GITHUB_REF_NAME}" \
+            --verify-tag
+
+      - name: Publish release
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
