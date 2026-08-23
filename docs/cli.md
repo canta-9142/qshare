@@ -45,12 +45,11 @@ stdout. An explicitly selected missing or unknown backend is an error.
 
 | Option | Meaning |
 | --- | --- |
-| `-l`, `--lan` | Explicitly select the currently supported LAN mode |
 | `-e`, `--expire DURATION` | Set session lifetime; default `10m` |
 | `-r`, `--receive-dir DIR` | Set the upload destination in receive mode |
 | `-t`, `--text TEXT` | Share explicit UTF-8 text |
 | `-c`, `--clipboard BACKEND` | Select receive-mode clipboard handling |
-| `--version` | Print the qshare version and exit |
+| `-v`, `--version` | Print the qshare version and exit |
 | `--help` | Print help and exit |
 
 Durations use Go syntax such as `30s`, `10m`, and `1h30m`, and must be greater
@@ -126,5 +125,5 @@ qshare --receive-dir ./received
 qshare | COMMAND
 
 # Display the installed version
-qshare --version
+qshare -v
 ```

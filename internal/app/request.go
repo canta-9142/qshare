@@ -38,19 +38,11 @@ const (
 	OperationReceive
 )
 
-type NetworkMode int
-
-const (
-	NetworkAuto NetworkMode = iota
-	NetworkLAN
-)
-
 type Request struct {
-	Operation   Operation
-	Paths       []string
-	Text        share.Text
-	ReceiveDir  string
-	Clipboard   string
-	NetworkMode NetworkMode
-	Lifetime    time.Duration
+	Operation  Operation
+	Paths      []string
+	Text       share.Text
+	ReceiveDir string
+	Clipboard  string
+	Lifetime   time.Duration
 }

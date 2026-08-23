@@ -81,11 +81,6 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		return parseResult{}, fmt.Errorf("too many files: got %d, maximum is %d", len(args.Files), share.MaxFiles)
 	}
 
-	networkMode := app.NetworkAuto
-	if args.LAN {
-		networkMode = app.NetworkLAN
-	}
-
 	if !stdin.terminal {
 		switch {
 		case len(args.Files) != 0:
@@ -109,10 +104,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationSendText,
-				Text:        text,
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation: app.OperationSendText,
+				Text:      text,
+				Lifetime:  args.Expire,
 			},
 		}, nil
 	}
@@ -135,10 +129,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationSendText,
-				Text:        text,
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation: app.OperationSendText,
+				Text:      text,
+				Lifetime:  args.Expire,
 			},
 		}, nil
 	}
@@ -162,11 +155,10 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationReceive,
-				ReceiveDir:  receiveDir,
-				Clipboard:   *args.Clipboard,
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation:  app.OperationReceive,
+				ReceiveDir: receiveDir,
+				Clipboard:  *args.Clipboard,
+				Lifetime:   args.Expire,
 			},
 		}, nil
 	}
@@ -184,11 +176,10 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationReceive,
-				ReceiveDir:  receiveDir,
-				Clipboard:   "auto",
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation:  app.OperationReceive,
+				ReceiveDir: receiveDir,
+				Clipboard:  "auto",
+				Lifetime:   args.Expire,
 			},
 		}, nil
 
@@ -203,10 +194,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		}
 		return parseResult{
 			Request: app.Request{
-				Operation:   operation,
-				Paths:       append([]string(nil), args.Files...),
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation: operation,
+				Paths:     append([]string(nil), args.Files...),
+				Lifetime:  args.Expire,
 			},
 		}, nil
 
