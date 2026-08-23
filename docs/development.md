@@ -25,6 +25,9 @@ go run ./cmd/qshare ./example.txt
 go test ./...
 go vet ./...
 
+# Test the Linux installer
+sh tests/install_test.sh
+
 # Format changed Go files
 gofmt -w path/to/changed.go
 ```
@@ -88,6 +91,43 @@ Service uses `qshare.spec` for RPM builds and `qshare.dsc` with the `debian.*`
 files for Debian builds. `PKGBUILD` contains the Arch recipe, and `flake.nix`
 provides Nix packaging. Packaging should not become the only supported
 installation path; release binaries and source builds remain available.
+
+Distribution builds set the version displayed by `qshare --version` with the
+Go linker, for example:
+
+```sh
+go build -ldflags "-X main.version=v0.6.0" ./cmd/qshare
+```
+
+An ordinary unstamped development build reports `qshare devel`.
+
+## Publishing a release
+
+Stable releases are published by `.github/workflows/release.yml`. Before
+tagging, update the package versions and release documentation in the same
+commit. Create and push a stable semantic-version tag:
+
+```sh
+git tag -a v0.7.0 -m "qshare v0.7.0"
+git push origin v0.7.0
+```
+
+The workflow accepts tags such as `v0.7.0`; prerelease tags are not supported.
+It runs the tests, vet, and race detector before building self-contained Linux
+binaries for amd64 and arm64. It then publishes these assets to a GitHub
+Release:
+
+```text
+install.sh
+qshare-linux-amd64
+qshare-linux-arm64
+checksums.txt
+```
+
+The release is created as a draft and published only after all assets have
+uploaded successfully. The installer downloads a binary from the selected
+release, verifies its SHA-256 checksum, and replaces the destination only after
+verification succeeds.
 
 ## Typical workflow
 

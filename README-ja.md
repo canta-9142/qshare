@@ -107,6 +107,19 @@ nix run github:canta-9142/qshare
 
 [GitHubのReleasesページ](https://github.com/canta-9142/qshare/releases)の最新のリリースから実行バイナリが入手できます。
 
+最新リリースを`~/.local/bin`へインストールするには、インストールスクリプトを
+ダウンロードして内容を確認してから実行します。
+
+```sh
+curl -fsSLO https://github.com/canta-9142/qshare/releases/latest/download/install.sh
+sh install.sh
+```
+
+インストーラーはLinuxのamd64とarm64に対応し、ダウンロードしたバイナリを
+リリースのSHA-256チェックサムで検証します。`sudo`を自動で実行することは
+ありません。バージョンを指定する場合は`--version v0.7.0`、インストール先を
+変更する場合は`--bin-dir /absolute/path`を使用します。
+
 [Open Build Service](https://build.opensuse.org/package/show/home:canta-9142/qshare)にて、Debian・Raspbian・Arch向けのパッケージが提供されております。
 
 ソースコードからビルドを行うこともできます。
@@ -114,8 +127,6 @@ nix run github:canta-9142/qshare
 ```sh
 go build ./cmd/qshare
 ```
-
-また近日中に、Linux向けのインストールスクリプトを提供する予定です。
 
 ### その他のOS (Windows・macOS) について
 

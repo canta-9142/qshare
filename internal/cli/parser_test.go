@@ -238,6 +238,7 @@ func TestParseHelpDoesNotReadPipedStdin(t *testing.T) {
 	result, err := parseWithInput(
 		[]string{"--help"},
 		stdinInput{reader: errorReader{}},
+		"devel",
 		&stdout,
 		&stderr,
 	)
@@ -275,21 +276,18 @@ func TestParseMapsArguments(t *testing.T) {
 		name         string
 		argv         []string
 		wantPaths    string
-		wantMode     app.NetworkMode
 		wantLifetime time.Duration
 	}{
 		{
 			name:         "defaults",
 			argv:         []string{"example.txt"},
 			wantPaths:    "example.txt",
-			wantMode:     app.NetworkAuto,
 			wantLifetime: 10 * time.Minute,
 		},
 		{
-			name:         "LAN and expiration",
-			argv:         []string{"--lan", "--expire", "30s", "example.txt"},
+			name:         "expiration",
+			argv:         []string{"--expire", "30s", "example.txt"},
 			wantPaths:    "example.txt",
-			wantMode:     app.NetworkLAN,
 			wantLifetime: 30 * time.Second,
 		},
 	}
@@ -310,9 +308,6 @@ func TestParseMapsArguments(t *testing.T) {
 			}
 			if result.Request.Paths[0] != tt.wantPaths {
 				t.Errorf("Path = %q, want %q", result.Request.Paths[0], tt.wantPaths)
-			}
-			if result.Request.NetworkMode != tt.wantMode {
-				t.Errorf("NetworkMode = %v, want %v", result.Request.NetworkMode, tt.wantMode)
 			}
 			if result.Request.Lifetime != tt.wantLifetime {
 				t.Errorf("Lifetime = %v, want %v", result.Request.Lifetime, tt.wantLifetime)
@@ -422,12 +417,42 @@ func TestParseHelp(t *testing.T) {
 	}
 }
 
+func TestParseVersion(t *testing.T) {
+	for _, option := range []string{"--version", "-v"} {
+		t.Run(option, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			result, err := parseWithInput(
+				[]string{option},
+				stdinInput{reader: errorReader{}},
+				"v1.2.3",
+				&stdout,
+				&stderr,
+			)
+			if err != nil {
+				t.Fatalf("parseWithInput() error = %v", err)
+			}
+			if !result.Exit || result.Code != 0 {
+				t.Fatalf("parseWithInput() exit = %v, code = %d; want exit with code 0", result.Exit, result.Code)
+			}
+			if got := stdout.String(); got != "qshare v1.2.3\n" {
+				t.Errorf("stdout = %q, want %q", got, "qshare v1.2.3\n")
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
 func TestParseReportsSyntaxErrorsAsUsageErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		argv []string
 	}{
 		{name: "unknown flag", argv: []string{"--unknown", "example.txt"}},
+		{name: "removed LAN flag", argv: []string{"--lan", "example.txt"}},
+		{name: "removed LAN short flag", argv: []string{"-l", "example.txt"}},
 		{name: "invalid duration", argv: []string{"--expire", "invalid", "example.txt"}},
 	}
 

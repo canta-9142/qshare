@@ -12,6 +12,8 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
+const developmentVersion = "devel"
+
 type parseResult struct {
 	Request app.Request
 	Exit    bool
@@ -19,7 +21,7 @@ type parseResult struct {
 }
 
 func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
-	return parseWithInput(argv, stdinInput{terminal: true}, stdout, stderr)
+	return parseWithInput(argv, stdinInput{terminal: true}, developmentVersion, stdout, stderr)
 }
 
 type stdinInput struct {
@@ -27,7 +29,7 @@ type stdinInput struct {
 	terminal bool
 }
 
-func parseWithInput(argv []string, stdin stdinInput, stdout io.Writer, stderr io.Writer) (parseResult, error) {
+func parseWithInput(argv []string, stdin stdinInput, version string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
 	var args arguments
 
 	parser, err := arg.NewParser(arg.Config{
@@ -56,6 +58,14 @@ func parseWithInput(argv []string, stdin stdinInput, stdout io.Writer, stderr io
 		}, nil
 	}
 
+	if args.Version {
+		fmt.Fprintf(stdout, "qshare %s\n", version)
+		return parseResult{
+			Exit: true,
+			Code: 0,
+		}, nil
+	}
+
 	return mapArgumentsWithInput(args, stdin)
 }
 
@@ -69,11 +79,6 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 	}
 	if len(args.Files) > share.MaxFiles {
 		return parseResult{}, fmt.Errorf("too many files: got %d, maximum is %d", len(args.Files), share.MaxFiles)
-	}
-
-	networkMode := app.NetworkAuto
-	if args.LAN {
-		networkMode = app.NetworkLAN
 	}
 
 	if !stdin.terminal {
@@ -99,10 +104,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationSendText,
-				Text:        text,
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation: app.OperationSendText,
+				Text:      text,
+				Lifetime:  args.Expire,
 			},
 		}, nil
 	}
@@ -125,10 +129,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationSendText,
-				Text:        text,
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation: app.OperationSendText,
+				Text:      text,
+				Lifetime:  args.Expire,
 			},
 		}, nil
 	}
@@ -152,11 +155,10 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationReceive,
-				ReceiveDir:  receiveDir,
-				Clipboard:   *args.Clipboard,
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation:  app.OperationReceive,
+				ReceiveDir: receiveDir,
+				Clipboard:  *args.Clipboard,
+				Lifetime:   args.Expire,
 			},
 		}, nil
 	}
@@ -174,11 +176,10 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 
 		return parseResult{
 			Request: app.Request{
-				Operation:   app.OperationReceive,
-				ReceiveDir:  receiveDir,
-				Clipboard:   "auto",
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation:  app.OperationReceive,
+				ReceiveDir: receiveDir,
+				Clipboard:  "auto",
+				Lifetime:   args.Expire,
 			},
 		}, nil
 
@@ -193,10 +194,9 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		}
 		return parseResult{
 			Request: app.Request{
-				Operation:   operation,
-				Paths:       append([]string(nil), args.Files...),
-				NetworkMode: networkMode,
-				Lifetime:    args.Expire,
+				Operation: operation,
+				Paths:     append([]string(nil), args.Files...),
+				Lifetime:  args.Expire,
 			},
 		}, nil
 

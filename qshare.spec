@@ -35,6 +35,7 @@ go build \
     -buildvcs=false \
     -mod=readonly \
     -trimpath \
+    -ldflags "-X main.version=v%{version}" \
     -o qshare \
     ./cmd/qshare
 

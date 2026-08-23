@@ -92,9 +92,11 @@ the behavior of that program; qshare does not execute received text.
 
 ## Network boundary
 
-The server binds to the selected LAN IPv4 address on TCP port `55544`. qshare
-does not configure the host firewall. HTTPS, Direct Mode, captive portals, and
-automatic hotspot cleanup are not part of the current implementation.
+The server binds to the selected LAN IPv4 address on a random TCP port from
+`50000`–`59999`. On supported systems, qshare adds a temporary firewall rule
+limited to the selected interface, source subnet, destination address, and
+port. HTTPS, Direct Mode, captive portals, and automatic hotspot cleanup are
+not part of the current implementation.
 
 ## Verification
 
