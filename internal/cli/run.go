@@ -11,10 +11,10 @@ import (
 )
 
 func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
-	return runWithInput(argv, nil, true, stdout, stderr)
+	return runWithInputAndQuitListener(argv, developmentVersion, nil, true, stdout, stderr, nil)
 }
 
-func RunWithStdin(argv []string, stdin *os.File, stdout io.Writer, stderr io.Writer) int {
+func RunWithStdin(argv []string, version string, stdin *os.File, stdout io.Writer, stderr io.Writer) int {
 	stdinIsTerminal := isTerminal(stdin)
 	var startQuitListener quitListenerStarter
 	if stdinIsTerminal {
@@ -22,11 +22,11 @@ func RunWithStdin(argv []string, stdin *os.File, stdout io.Writer, stderr io.Wri
 			return startTerminalQuitListener(stdin)
 		}
 	}
-	return runWithInputAndQuitListener(argv, stdin, stdinIsTerminal, stdout, stderr, startQuitListener)
+	return runWithInputAndQuitListener(argv, version, stdin, stdinIsTerminal, stdout, stderr, startQuitListener)
 }
 
 func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout io.Writer, stderr io.Writer) int {
-	return runWithInputAndQuitListener(argv, stdin, stdinIsTerminal, stdout, stderr, nil)
+	return runWithInputAndQuitListener(argv, developmentVersion, stdin, stdinIsTerminal, stdout, stderr, nil)
 }
 
 type terminalQuitListener interface {
@@ -38,6 +38,7 @@ type quitListenerStarter func() (terminalQuitListener, error)
 
 func runWithInputAndQuitListener(
 	argv []string,
+	version string,
 	stdin io.Reader,
 	stdinIsTerminal bool,
 	stdout io.Writer,
@@ -47,7 +48,7 @@ func runWithInputAndQuitListener(
 	result, err := parseWithInput(argv, stdinInput{
 		reader:   stdin,
 		terminal: stdinIsTerminal,
-	}, stdout, stderr)
+	}, version, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "qshare: %v\n", err)
 		return 2

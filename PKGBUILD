@@ -36,6 +36,7 @@ build() {
     -buildvcs=false \
     -mod=vendor \
     -trimpath \
+    -ldflags "-X main.version=v${pkgver}" \
     -o qshare \
     ./cmd/qshare
 }

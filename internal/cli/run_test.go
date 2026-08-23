@@ -18,6 +18,7 @@ func TestRunWithInputClosesQuitListenerAfterRuntimeFailure(t *testing.T) {
 
 	code := runWithInputAndQuitListener(
 		[]string{"missing-file"},
+		"devel",
 		nil,
 		true,
 		&bytes.Buffer{},
@@ -39,6 +40,7 @@ func TestRunWithInputReportsQuitListenerStartupFailure(t *testing.T) {
 
 	code := runWithInputAndQuitListener(
 		[]string{"missing-file"},
+		"devel",
 		nil,
 		true,
 		&bytes.Buffer{},
@@ -58,6 +60,7 @@ func TestRunWithInputDoesNotStartQuitListenerForHelp(t *testing.T) {
 	starts := 0
 	code := runWithInputAndQuitListener(
 		[]string{"--help"},
+		"devel",
 		nil,
 		true,
 		&bytes.Buffer{},
@@ -73,6 +76,33 @@ func TestRunWithInputDoesNotStartQuitListenerForHelp(t *testing.T) {
 	}
 	if starts != 0 {
 		t.Fatalf("listener starts = %d, want 0", starts)
+	}
+}
+
+func TestRunWithInputDoesNotStartQuitListenerForVersion(t *testing.T) {
+	starts := 0
+	var stdout bytes.Buffer
+	code := runWithInputAndQuitListener(
+		[]string{"--version"},
+		"v1.2.3",
+		nil,
+		true,
+		&stdout,
+		&bytes.Buffer{},
+		func() (terminalQuitListener, error) {
+			starts++
+			return nil, errors.New("unexpected listener start")
+		},
+	)
+
+	if code != 0 {
+		t.Fatalf("runWithInputAndQuitListener() = %d, want 0", code)
+	}
+	if starts != 0 {
+		t.Fatalf("listener starts = %d, want 0", starts)
+	}
+	if got := stdout.String(); got != "qshare v1.2.3\n" {
+		t.Fatalf("stdout = %q, want %q", got, "qshare v1.2.3\n")
 	}
 }
 

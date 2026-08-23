@@ -58,7 +58,16 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -o "dist/qshare-linux-${GOARCH}" ./cmd/qshare
+        run: |
+          version=devel
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version=$GITHUB_REF_NAME
+          fi
+          go build \
+            -trimpath \
+            -ldflags "-X main.version=${version}" \
+            -o "dist/qshare-linux-${GOARCH}" \
+            ./cmd/qshare
 
       - name: Upload binary
         uses: actions/upload-artifact@v6
