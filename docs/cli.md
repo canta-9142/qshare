@@ -64,8 +64,17 @@ qshare listens on the selected LAN IPv4 address at a random TCP port from
 `50000`–`59999`. If a candidate is already in use, it selects another one.
 Supported firewalls receive a temporary rule for the selected port. Every mode
 prints a QR code and authenticated URL, then runs until the session expires,
-receives a termination signal, or encounters a fatal server error. A completed
-transfer does not end the session.
+receives a termination signal, the user presses `q`, or it encounters a fatal
+server error. A completed transfer does not end the session.
+
+When stdin is a terminal, qshare switches it to non-canonical, no-echo input
+while the session runs and prints `Press q to quit.` to stderr. Pressing `q`
+does not require Enter. It stops new HTTP requests, gives active requests up to
+30 seconds to finish, drains accepted text submissions, restores the terminal,
+and exits successfully. Terminal signal generation remains enabled, so Ctrl+C
+retains normal SIGINT behavior instead of being treated as an input byte.
+Non-terminal stdin continues to select text send mode and does not enable the
+quit key.
 
 ## Output streams
 
@@ -84,7 +93,7 @@ Help goes to stdout. Invalid command syntax and usage messages go to stderr.
 
 | Code | Meaning |
 | ---: | --- |
-| `0` | Success, help, or normal expiration |
+| `0` | Success, help, normal expiration, or `q` shutdown |
 | `1` | Runtime or internal failure |
 | `2` | Invalid CLI usage or input |
 | `130` | Terminated by SIGINT |

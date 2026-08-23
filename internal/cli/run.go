@@ -15,10 +15,35 @@ func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func RunWithStdin(argv []string, stdin *os.File, stdout io.Writer, stderr io.Writer) int {
-	return runWithInput(argv, stdin, isTerminal(stdin), stdout, stderr)
+	stdinIsTerminal := isTerminal(stdin)
+	var startQuitListener quitListenerStarter
+	if stdinIsTerminal {
+		startQuitListener = func() (terminalQuitListener, error) {
+			return startTerminalQuitListener(stdin)
+		}
+	}
+	return runWithInputAndQuitListener(argv, stdin, stdinIsTerminal, stdout, stderr, startQuitListener)
 }
 
 func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout io.Writer, stderr io.Writer) int {
+	return runWithInputAndQuitListener(argv, stdin, stdinIsTerminal, stdout, stderr, nil)
+}
+
+type terminalQuitListener interface {
+	Quit() <-chan struct{}
+	Close() error
+}
+
+type quitListenerStarter func() (terminalQuitListener, error)
+
+func runWithInputAndQuitListener(
+	argv []string,
+	stdin io.Reader,
+	stdinIsTerminal bool,
+	stdout io.Writer,
+	stderr io.Writer,
+	startQuitListener quitListenerStarter,
+) int {
 	result, err := parseWithInput(argv, stdinInput{
 		reader:   stdin,
 		terminal: stdinIsTerminal,
@@ -35,12 +60,46 @@ func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout i
 	ctx, stopSignals := signalContext(context.Background())
 	defer stopSignals()
 
+	var quitListener terminalQuitListener
+	if startQuitListener != nil {
+		quitListener, err = startQuitListener()
+		if err != nil {
+			fmt.Fprintf(stderr, "qshare: configure quit key: %v\n", err)
+			return 1
+		}
+	}
+
+	listenerWatchDone := make(chan struct{})
+	var listenerWatchExited chan struct{}
+	if quitListener != nil {
+		listenerWatchExited = make(chan struct{})
+		go func() {
+			defer close(listenerWatchExited)
+			select {
+			case <-ctx.Done():
+				_ = quitListener.Close()
+			case <-listenerWatchDone:
+			}
+		}()
+	}
+
+	var shutdownRequested <-chan struct{}
+	if quitListener != nil {
+		shutdownRequested = quitListener.Quit()
+	}
 	application := app.New(app.Dependencies{
-		Stdout: stdout,
-		Stderr: stderr,
+		Stdout:            stdout,
+		Stderr:            stderr,
+		ShutdownRequested: shutdownRequested,
 	})
 
-	if err := application.Run(ctx, result.Request); err != nil {
+	err = application.Run(ctx, result.Request)
+	close(listenerWatchDone)
+	if quitListener != nil {
+		err = errors.Join(err, quitListener.Close())
+		<-listenerWatchExited
+	}
+	if err != nil {
 		fmt.Fprintf(stderr, "qshare: %v\n", err)
 		return exitCodeForError(err)
 	}
