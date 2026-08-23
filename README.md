@@ -105,6 +105,19 @@ nix run github:canta-9142/qshare
 
 Executable binaries are available from the latest release on the [GitHub Releases page](https://github.com/canta-9142/qshare/releases).
 
+To install the latest release into `~/.local/bin`, download and review the
+installation script, then run it:
+
+```sh
+curl -fsSLO https://github.com/canta-9142/qshare/releases/latest/download/install.sh
+sh install.sh
+```
+
+The installer supports Linux on amd64 and arm64, verifies the downloaded
+binary against the release SHA-256 checksums, and never invokes `sudo`. Use
+`--version v0.7.0` to select a release or `--bin-dir /absolute/path` to change
+the destination.
+
 Packages for Debian, Raspbian, and Arch are available from the [Open Build Service](https://build.opensuse.org/package/show/home:canta-9142/qshare).
 
 You can also build Qshare from source:
@@ -112,8 +125,6 @@ You can also build Qshare from source:
 ```sh
 go build ./cmd/qshare
 ```
-
-A Linux installation script is planned for the near future.
 
 ### Other operating systems (Windows and macOS)
 

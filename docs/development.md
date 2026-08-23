@@ -25,6 +25,9 @@ go run ./cmd/qshare ./example.txt
 go test ./...
 go vet ./...
 
+# Test the Linux installer
+sh tests/install_test.sh
+
 # Format changed Go files
 gofmt -w path/to/changed.go
 ```
@@ -115,13 +118,16 @@ binaries for amd64 and arm64. It then publishes these assets to a GitHub
 Release:
 
 ```text
+install.sh
 qshare-linux-amd64
 qshare-linux-arm64
 checksums.txt
 ```
 
 The release is created as a draft and published only after all assets have
-uploaded successfully.
+uploaded successfully. The installer downloads a binary from the selected
+release, verifies its SHA-256 checksum, and replaces the destination only after
+verification succeeds.
 
 ## Typical workflow
 
