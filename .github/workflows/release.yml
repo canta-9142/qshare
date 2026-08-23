@@ -132,7 +132,7 @@ jobs:
             dist/checksums.txt \
             --draft \
             --generate-notes \
-            --title "qshare ${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
             --verify-tag
 
       - name: Publish release
