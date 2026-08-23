@@ -3,11 +3,58 @@
 package firewall
 
 import (
+	"context"
 	"os"
+	"os/exec"
+	"slices"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestPrivilegedCommandUsesSetuidRootPKExec(t *testing.T) {
+	runner := &fakeHelperRunner{paths: map[string]string{
+		"pkexec": "/usr/bin/pkexec",
+		"sudo":   "/usr/bin/sudo",
+	}}
+	launcher := &processHelperLauncher{
+		runner:    runner,
+		effective: func() int { return 1000 },
+		stat: func(string) (os.FileInfo, error) {
+			return fakePrivilegedPathInfo{name: "pkexec", mode: os.ModeSetuid | 0o755, uid: 0}, nil
+		},
+	}
+
+	command, args, err := launcher.privilegedCommand("/nix/store/qshare", []string{"helper"})
+	if err != nil {
+		t.Fatalf("privilegedCommand() error = %v", err)
+	}
+	if command != "/usr/bin/pkexec" || !slices.Equal(args, []string{"/nix/store/qshare", "helper"}) {
+		t.Fatalf("privilegedCommand() = %q, %v", command, args)
+	}
+}
+
+func TestPrivilegedCommandFallsBackFromNonSetuidPKExecToSudo(t *testing.T) {
+	runner := &fakeHelperRunner{paths: map[string]string{
+		"pkexec": "/run/current-system/sw/bin/pkexec",
+		"sudo":   "/run/wrappers/bin/sudo",
+	}}
+	launcher := &processHelperLauncher{
+		runner:    runner,
+		effective: func() int { return 1000 },
+		stat: func(string) (os.FileInfo, error) {
+			return fakePrivilegedPathInfo{name: "pkexec", mode: 0o555, uid: 0}, nil
+		},
+	}
+
+	command, args, err := launcher.privilegedCommand("/nix/store/qshare", []string{"helper"})
+	if err != nil {
+		t.Fatalf("privilegedCommand() error = %v", err)
+	}
+	if command != "/run/wrappers/bin/sudo" || !slices.Equal(args, []string{"--", "/nix/store/qshare", "helper"}) {
+		t.Fatalf("privilegedCommand() = %q, %v", command, args)
+	}
+}
 
 func TestValidatePrivilegedExecutableAllowsRootOwnedStickyDirectory(t *testing.T) {
 	const executable = "/nix/store/example-qshare/bin/qshare"
@@ -88,4 +135,20 @@ func fakePrivilegedPathStat(overrides map[string]os.FileInfo) func(string) (os.F
 		}
 		return fakePrivilegedPathInfo{name: path, mode: os.ModeDir | 0o755, uid: 0}, nil
 	}
+}
+
+type fakeHelperRunner struct {
+	paths map[string]string
+}
+
+func (r *fakeHelperRunner) lookPath(name string) (string, error) {
+	path, ok := r.paths[name]
+	if !ok {
+		return "", exec.ErrNotFound
+	}
+	return path, nil
+}
+
+func (*fakeHelperRunner) run(context.Context, string, ...string) commandResult {
+	return commandResult{}
 }

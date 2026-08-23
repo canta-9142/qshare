@@ -138,13 +138,27 @@ func (l *processHelperLauncher) privilegedCommand(self string, helperArgs []stri
 		return self, helperArgs, nil
 	}
 	if pkexec, err := l.runner.lookPath("pkexec"); err == nil {
-		return pkexec, append([]string{self}, helperArgs...), nil
+		if isSetuidRoot(pkexec, l.stat) {
+			return pkexec, append([]string{self}, helperArgs...), nil
+		}
 	}
 	if sudo, err := l.runner.lookPath("sudo"); err == nil {
 		args := []string{"--", self}
 		return sudo, append(args, helperArgs...), nil
 	}
 	return "", nil, errors.New("automatic NixOS firewall configuration requires pkexec or sudo")
+}
+
+// isSetuidRoot reports whether an elevation tool can actually acquire root.
+// NixOS may expose the non-setuid pkexec store binary through PATH while its
+// usable setuid programs live under /run/wrappers/bin.
+func isSetuidRoot(path string, stat func(string) (os.FileInfo, error)) bool {
+	info, err := stat(path)
+	if err != nil {
+		return false
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	return ok && owner.Uid == 0 && info.Mode()&os.ModeSetuid != 0
 }
 
 // processLease keeps the helper alive through an open stdin pipe.
