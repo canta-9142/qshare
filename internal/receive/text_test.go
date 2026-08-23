@@ -106,6 +106,83 @@ func TestTextProcessorAppliesBoundedBackpressure(t *testing.T) {
 	}
 }
 
+func TestTextProcessorShutdownDrainsAcceptedSubmissions(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var mu sync.Mutex
+	var values []string
+	processor := NewTextProcessor(textSinkFunc(func(_ context.Context, text share.Text) error {
+		if text.String() == "first" {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		mu.Lock()
+		values = append(values, text.String())
+		mu.Unlock()
+		return nil
+	}), 1)
+	t.Cleanup(processor.Close)
+
+	firstDone := submitAsync(processor, textForTest(t, "first"))
+	<-firstStarted
+	secondDone := submitAsync(processor, textForTest(t, "second"))
+	waitForQueueLength(t, processor, 1)
+
+	shutdownDone := make(chan struct{})
+	go func() {
+		processor.Shutdown()
+		close(shutdownDone)
+	}()
+
+	select {
+	case <-shutdownDone:
+		t.Fatal("Shutdown() returned before accepted submissions finished")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+	for _, done := range []<-chan error{firstDone, secondDone} {
+		if err := <-done; err != nil {
+			t.Fatalf("Submit() error = %v", err)
+		}
+	}
+	<-shutdownDone
+
+	mu.Lock()
+	if got := values; len(got) != 2 || got[0] != "first" || got[1] != "second" {
+		mu.Unlock()
+		t.Fatalf("processed values = %q, want [first second]", got)
+	}
+	mu.Unlock()
+
+	if err := processor.Submit(context.Background(), textForTest(t, "third")); !errors.Is(err, ErrTextProcessorClosed) {
+		t.Fatalf("Submit() after Shutdown() error = %v, want ErrTextProcessorClosed", err)
+	}
+}
+
+func TestTextProcessorCloseCancelsShutdown(t *testing.T) {
+	started := make(chan struct{})
+	processor := NewTextProcessor(textSinkFunc(func(ctx context.Context, _ share.Text) error {
+		close(started)
+		<-ctx.Done()
+		return context.Cause(ctx)
+	}), 1)
+
+	submitDone := submitAsync(processor, textForTest(t, "value"))
+	<-started
+	shutdownDone := make(chan struct{})
+	go func() {
+		processor.Shutdown()
+		close(shutdownDone)
+	}()
+
+	processor.Close()
+	<-shutdownDone
+	if err := <-submitDone; !errors.Is(err, context.Canceled) && !errors.Is(err, ErrTextProcessorClosed) {
+		t.Fatalf("Submit() error = %v, want cancellation error", err)
+	}
+}
+
 func TestWriterTextSinkPreservesBytesWithoutSeparators(t *testing.T) {
 	var destination bytes.Buffer
 	sink := NewWriterTextSink(&destination)
