@@ -11,5 +11,6 @@
 // cannot run.
 //
 // To avoid elevating a replaceable executable, an unprivileged qshare process
-// may start the helper only from a root-owned, non-writable installation path.
+// may start the helper only from a root-owned, non-replaceable installation
+// path.
 package firewall
