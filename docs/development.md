@@ -98,6 +98,31 @@ go build -ldflags "-X main.version=v0.6.0" ./cmd/qshare
 
 An ordinary unstamped development build reports `qshare devel`.
 
+## Publishing a release
+
+Stable releases are published by `.github/workflows/release.yml`. Before
+tagging, update the package versions and release documentation in the same
+commit. Create and push a stable semantic-version tag:
+
+```sh
+git tag -a v0.7.0 -m "qshare v0.7.0"
+git push origin v0.7.0
+```
+
+The workflow accepts tags such as `v0.7.0`; prerelease tags are not supported.
+It runs the tests, vet, and race detector before building self-contained Linux
+binaries for amd64 and arm64. It then publishes these assets to a GitHub
+Release:
+
+```text
+qshare-linux-amd64
+qshare-linux-arm64
+checksums.txt
+```
+
+The release is created as a draft and published only after all assets have
+uploaded successfully.
+
 ## Typical workflow
 
 ```text
