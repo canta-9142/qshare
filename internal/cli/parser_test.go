@@ -238,6 +238,7 @@ func TestParseHelpDoesNotReadPipedStdin(t *testing.T) {
 	result, err := parseWithInput(
 		[]string{"--help"},
 		stdinInput{reader: errorReader{}},
+		"devel",
 		&stdout,
 		&stderr,
 	)
@@ -416,6 +417,30 @@ func TestParseHelp(t *testing.T) {
 	}
 	if stdout.Len() == 0 {
 		t.Error("help output on stdout is empty")
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestParseVersion(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	result, err := parseWithInput(
+		[]string{"--version"},
+		stdinInput{reader: errorReader{}},
+		"v1.2.3",
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatalf("parseWithInput() error = %v", err)
+	}
+	if !result.Exit || result.Code != 0 {
+		t.Fatalf("parseWithInput() exit = %v, code = %d; want exit with code 0", result.Exit, result.Code)
+	}
+	if got := stdout.String(); got != "qshare v1.2.3\n" {
+		t.Errorf("stdout = %q, want %q", got, "qshare v1.2.3\n")
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("stderr = %q, want empty", stderr.String())

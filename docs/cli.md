@@ -50,6 +50,7 @@ stdout. An explicitly selected missing or unknown backend is an error.
 | `-r`, `--receive-dir DIR` | Set the upload destination in receive mode |
 | `-t`, `--text TEXT` | Share explicit UTF-8 text |
 | `-c`, `--clipboard BACKEND` | Select receive-mode clipboard handling |
+| `--version` | Print the qshare version and exit |
 | `--help` | Print help and exit |
 
 Durations use Go syntax such as `30s`, `10m`, and `1h30m`, and must be greater
@@ -87,13 +88,15 @@ QR codes, URLs, status, notices, and errors go to stderr. Received text goes to
 stdout only when automatic clipboard selection finds no supported backend.
 qshare adds no separator between submissions.
 
-Help goes to stdout. Invalid command syntax and usage messages go to stderr.
+Help and version information go to stdout. Invalid command syntax and usage
+messages go to stderr. Unstamped local builds report `qshare devel`; release
+and package builds report their tagged version, such as `qshare v0.6.0`.
 
 ## Exit codes
 
 | Code | Meaning |
 | ---: | --- |
-| `0` | Success, help, normal expiration, or `q` shutdown |
+| `0` | Success, help, version output, normal expiration, or `q` shutdown |
 | `1` | Runtime or internal failure |
 | `2` | Invalid CLI usage or input |
 | `130` | Terminated by SIGINT |
@@ -121,4 +124,7 @@ qshare --receive-dir ./received
 
 # Receive text as a stdout stream when no clipboard backend is available
 qshare | COMMAND
+
+# Display the installed version
+qshare --version
 ```

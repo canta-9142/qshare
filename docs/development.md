@@ -89,6 +89,15 @@ files for Debian builds. `PKGBUILD` contains the Arch recipe, and `flake.nix`
 provides Nix packaging. Packaging should not become the only supported
 installation path; release binaries and source builds remain available.
 
+Distribution builds set the version displayed by `qshare --version` with the
+Go linker, for example:
+
+```sh
+go build -ldflags "-X main.version=v0.6.0" ./cmd/qshare
+```
+
+An ordinary unstamped development build reports `qshare devel`.
+
 ## Typical workflow
 
 ```text

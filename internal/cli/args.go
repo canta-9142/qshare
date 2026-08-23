@@ -8,5 +8,6 @@ type arguments struct {
 	ReceiveDir string        `arg:"--receive-dir,-r" placeholder:"DIR" help:"directory for received files"`
 	Text       *string       `arg:"--text,-t" placeholder:"TEXT" help:"share UTF-8 text"`
 	Clipboard  *string       `arg:"--clipboard,-c" placeholder:"BACKEND" help:"clipboard backend (default in receive mode: auto)"`
+	Version    bool          `arg:"--version" help:"print version and exit"`
 	Files      []string      `arg:"positional" placeholder:"FILE"`
 }

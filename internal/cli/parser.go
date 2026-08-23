@@ -12,6 +12,8 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
+const developmentVersion = "devel"
+
 type parseResult struct {
 	Request app.Request
 	Exit    bool
@@ -19,7 +21,7 @@ type parseResult struct {
 }
 
 func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
-	return parseWithInput(argv, stdinInput{terminal: true}, stdout, stderr)
+	return parseWithInput(argv, stdinInput{terminal: true}, developmentVersion, stdout, stderr)
 }
 
 type stdinInput struct {
@@ -27,7 +29,7 @@ type stdinInput struct {
 	terminal bool
 }
 
-func parseWithInput(argv []string, stdin stdinInput, stdout io.Writer, stderr io.Writer) (parseResult, error) {
+func parseWithInput(argv []string, stdin stdinInput, version string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
 	var args arguments
 
 	parser, err := arg.NewParser(arg.Config{
@@ -53,6 +55,14 @@ func parseWithInput(argv []string, stdin stdinInput, stdout io.Writer, stderr io
 		return parseResult{
 			Exit: true,
 			Code: 2,
+		}, nil
+	}
+
+	if args.Version {
+		fmt.Fprintf(stdout, "qshare %s\n", version)
+		return parseResult{
+			Exit: true,
+			Code: 0,
 		}, nil
 	}
 

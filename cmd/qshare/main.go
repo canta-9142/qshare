@@ -7,6 +7,9 @@ import (
 	"github.com/canta-9142/qshare/internal/platform/firewall"
 )
 
+// version is replaced in distribution builds with -ldflags "-X main.version=...".
+var version = "devel"
+
 func main() {
 	if handled, code := firewall.RunHelperIfRequested(
 		os.Args[1:],
@@ -16,5 +19,5 @@ func main() {
 	); handled {
 		os.Exit(code)
 	}
-	os.Exit(cli.RunWithStdin(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(cli.RunWithStdin(os.Args[1:], version, os.Stdin, os.Stdout, os.Stderr))
 }
