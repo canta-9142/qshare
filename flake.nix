@@ -32,7 +32,7 @@
           };
         });
         buildGoModule = pkgs.buildGoModule.override { inherit go; };
-        packageVersion = "0.6.0";
+        packageVersion = "0.6.1";
         qshare = buildGoModule {
           pname = "qshare";
           version = packageVersion;

@@ -96,7 +96,7 @@ Distribution builds set the version displayed by `qshare --version` with the
 Go linker, for example:
 
 ```sh
-go build -ldflags "-X main.version=v0.6.0" ./cmd/qshare
+go build -ldflags "-X main.version=v0.6.1" ./cmd/qshare
 ```
 
 An ordinary unstamped development build reports `qshare devel`.
