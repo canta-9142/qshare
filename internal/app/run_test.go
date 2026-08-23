@@ -72,6 +72,53 @@ func TestApplicationRunCancellation(t *testing.T) {
 	}
 }
 
+func TestApplicationRunInteractiveShutdown(t *testing.T) {
+	application, fake, stderr, path := newTestApplication(t)
+	shutdownRequested := make(chan struct{})
+	close(shutdownRequested)
+	application.shutdownRequested = shutdownRequested
+
+	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if fake.shutdownCalls != 1 || fake.closeCalls != 0 {
+		t.Fatalf("shutdown=%d close=%d, want shutdown=1 close=0", fake.shutdownCalls, fake.closeCalls)
+	}
+	if got := stderr.String(); !strings.Contains(got, "Press q to quit.") {
+		t.Fatalf("stderr = %q, want quit hint", got)
+	}
+}
+
+func TestApplicationInteractiveShutdownCanBeInterrupted(t *testing.T) {
+	application, fake, _, path := newTestApplication(t)
+	shutdownRequested := make(chan struct{})
+	close(shutdownRequested)
+	application.shutdownRequested = shutdownRequested
+	shutdownStarted := make(chan struct{})
+	fake.shutdown = func(ctx context.Context) error {
+		close(shutdownStarted)
+		<-ctx.Done()
+		return context.Cause(ctx)
+	}
+
+	cause := errors.New("interrupt graceful shutdown")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- application.Run(ctx, Request{Paths: []string{path}, Lifetime: time.Hour})
+	}()
+
+	<-shutdownStarted
+	cancel(cause)
+	if err := <-done; !errors.Is(err, cause) {
+		t.Fatalf("Run() error = %v, want cancellation cause", err)
+	}
+	if fake.closeCalls != 1 {
+		t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
+	}
+}
+
 func TestApplicationRunServerFailure(t *testing.T) {
 	application, fake, _, path := newTestApplication(t)
 	serveErr := errors.New("serve failed")
@@ -367,6 +414,76 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 	}
 }
 
+func TestApplicationInteractiveShutdownDrainsReceivedText(t *testing.T) {
+	shutdownRequested := make(chan struct{})
+	close(shutdownRequested)
+	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
+	application := New(Dependencies{
+		Stderr:            io.Discard,
+		ShutdownRequested: shutdownRequested,
+	})
+	configureTestNetworking(application)
+	application.openReceiveStore = func(string) (receiveStore, error) {
+		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+			return receive.Result{}, nil
+		}), nil
+	}
+
+	sinkStarted := make(chan struct{})
+	releaseSink := make(chan struct{})
+	var received string
+	application.newClipboardSink = func(string) (receive.TextSink, error) {
+		return textSinkFunc(func(_ context.Context, text share.Text) error {
+			close(sinkStarted)
+			<-releaseSink
+			received = text.String()
+			return nil
+		}), nil
+	}
+	submitDone := make(chan error, 1)
+	application.newReceiveServer = func(_ *session.Session, _ receiveStore, submitter textSubmitter) sessionServer {
+		text, err := share.NewText([]byte("drained text"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			submitDone <- submitter.Submit(context.Background(), text)
+		}()
+		<-sinkStarted
+		return fake
+	}
+	application.renderQR = func(io.Writer, string) error { return nil }
+
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- application.Run(context.Background(), Request{
+			Operation:  OperationReceive,
+			ReceiveDir: "/receive",
+			Clipboard:  "xclip",
+			Lifetime:   time.Hour,
+		})
+	}()
+
+	select {
+	case err := <-runDone:
+		t.Fatalf("Run() returned before text drain: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseSink)
+	if err := <-submitDone; err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+	if err := <-runDone; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if received != "drained text" {
+		t.Fatalf("received text = %q, want drained text", received)
+	}
+	if fake.shutdownCalls != 1 || fake.closeCalls != 0 {
+		t.Fatalf("shutdown=%d close=%d, want shutdown=1 close=0", fake.shutdownCalls, fake.closeCalls)
+	}
+}
+
 func TestApplicationRunReceiveModeUsesClipboardSink(t *testing.T) {
 	var clipboard bytes.Buffer
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
@@ -594,6 +711,12 @@ type receiveStoreFunc func(context.Context, string, io.Reader) (receive.Result, 
 
 func (function receiveStoreFunc) Save(ctx context.Context, name string, source io.Reader) (receive.Result, error) {
 	return function(ctx, name, source)
+}
+
+type textSinkFunc func(context.Context, share.Text) error
+
+func (function textSinkFunc) WriteText(ctx context.Context, text share.Text) error {
+	return function(ctx, text)
 }
 
 type testAddr string

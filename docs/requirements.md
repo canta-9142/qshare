@@ -33,6 +33,9 @@ Every operation creates a temporary session with a cryptographically secure
 - Downloads and submissions do not end a session.
 - Expiration stops new requests and gives active requests up to 30 seconds to
   finish before they are closed.
+- With terminal stdin, pressing `q` stops new requests, gives active requests
+  up to 30 seconds to finish, drains accepted text submissions, and exits
+  successfully. No Enter key is required.
 - SIGINT and SIGTERM trigger graceful shutdown.
 - Interactive output, including the QR code and URL, goes to stderr.
 

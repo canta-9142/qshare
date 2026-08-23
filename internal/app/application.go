@@ -53,6 +53,7 @@ type firewallLease interface {
 type Application struct {
 	stderr             io.Writer
 	stdout             io.Writer
+	shutdownRequested  <-chan struct{}
 	advertiseEndpoint  func() (network.Endpoint, error)
 	selectServerPort   func() (uint16, error)
 	openFirewall       func(context.Context, firewall.Rule) (firewallLease, error)
@@ -68,8 +69,9 @@ type Application struct {
 }
 
 type Dependencies struct {
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdout            io.Writer
+	Stderr            io.Writer
+	ShutdownRequested <-chan struct{}
 }
 
 type textSubmitter interface {
@@ -93,6 +95,7 @@ func New(deps Dependencies) *Application {
 	return &Application{
 		stdout:            stdout,
 		stderr:            deps.Stderr,
+		shutdownRequested: deps.ShutdownRequested,
 		advertiseEndpoint: network.AdvertiseEndpoint,
 		selectServerPort:  randomServerPort,
 		openFirewall: func(ctx context.Context, rule firewall.Rule) (firewallLease, error) {

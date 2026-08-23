@@ -17,6 +17,13 @@ import (
 	"github.com/canta-9142/qshare/internal/session"
 )
 
+type sessionEnd uint8
+
+const (
+	sessionEnded sessionEnd = iota
+	sessionShutdownRequested
+)
+
 func (a *Application) Run(ctx context.Context, req Request) error {
 	switch req.Operation {
 	case OperationSendFile:
@@ -66,7 +73,9 @@ func (a *Application) runSendDirectory(ctx context.Context, req Request) (runErr
 		return errors.Join(fmt.Errorf("failed to render QR code: %w", err), srv.Close())
 	}
 	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL.String(), req.Lifetime)
-	return a.runSession(ctx, sess, srv)
+	a.printQuitHint()
+	_, err = a.runSession(ctx, sess, srv)
+	return err
 }
 
 func (a *Application) runSendFile(ctx context.Context, req Request) (runErr error) {
@@ -122,8 +131,10 @@ func (a *Application) runSendFile(ctx context.Context, req Request) (runErr erro
 	fmt.Fprintf(a.stderr, "\n%s\n\n", payload)
 
 	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime.String())
+	a.printQuitHint()
 
-	return a.runSession(ctx, sess, srv)
+	_, err = a.runSession(ctx, sess, srv)
+	return err
 }
 
 func (a *Application) runSendText(ctx context.Context, req Request) error {
@@ -160,8 +171,10 @@ func (a *Application) runSendText(ctx context.Context, req Request) error {
 
 	fmt.Fprintf(a.stderr, "\n%s\n\n", accessURL.String())
 	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime)
+	a.printQuitHint()
 
-	return a.runSession(ctx, sess, srv)
+	_, err = a.runSession(ctx, sess, srv)
+	return err
 }
 
 func (a *Application) runReceive(ctx context.Context, req Request) error {
@@ -195,7 +208,12 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		textSink,
 		receive.TextQueueCapacity,
 	)
-	defer textProcessor.Close()
+	textProcessorStopped := false
+	defer func() {
+		if !textProcessorStopped {
+			textProcessor.Close()
+		}
+	}()
 
 	endpoint, err := a.advertiseEndpoint()
 	if err != nil {
@@ -225,8 +243,22 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 
 	fmt.Fprintf(a.stderr, "\n%s\n\n", accessURL.String())
 	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime)
+	a.printQuitHint()
 
-	return a.runSession(ctx, sess, srv)
+	end, err := a.runSession(ctx, sess, srv)
+	if err != nil || end != sessionShutdownRequested {
+		return err
+	}
+
+	err = shutdownTextProcessor(ctx, textProcessor)
+	textProcessorStopped = true
+	return err
+}
+
+func (a *Application) printQuitHint() {
+	if a.shutdownRequested != nil {
+		fmt.Fprint(a.stderr, "Press q to quit.\n\n")
+	}
 }
 
 // startLANServer binds an available random port and opens its temporary firewall rule.
@@ -332,7 +364,7 @@ func (s *firewalledSessionServer) closeFirewall() error {
 	return nil
 }
 
-func (a *Application) runSession(ctx context.Context, sess *session.Session, srv sessionServer) error {
+func (a *Application) runSession(ctx context.Context, sess *session.Session, srv sessionServer) (sessionEnd, error) {
 	timer := time.NewTimer(time.Until(sess.ExpiresAt()))
 	defer timer.Stop()
 
@@ -340,14 +372,21 @@ func (a *Application) runSession(ctx context.Context, sess *session.Session, srv
 	case <-timer.C:
 		// Expiration
 		if err := shutdownExpiredServer(srv, expirationDrainTimeout); err != nil {
-			return fmt.Errorf("failed to shutdown server: %w", err)
+			return sessionEnded, fmt.Errorf("failed to shutdown server: %w", err)
 		}
-		return nil
+		return sessionEnded, nil
+
+	case <-a.shutdownRequested:
+		// Interactive normal shutdown
+		if err := shutdownRequestedServer(ctx, srv, expirationDrainTimeout); err != nil {
+			return sessionShutdownRequested, fmt.Errorf("failed to shutdown server: %w", err)
+		}
+		return sessionShutdownRequested, nil
 
 	case <-ctx.Done():
 		// SIGINT/SIGTERM
 		closeErr := srv.Close()
-		return errors.Join(
+		return sessionEnded, errors.Join(
 			context.Cause(ctx),
 			closeErr,
 		)
@@ -358,14 +397,22 @@ func (a *Application) runSession(ctx context.Context, sess *session.Session, srv
 			err = errors.Join(err, closeErr)
 		}
 		if err != nil {
-			return fmt.Errorf("HTTP server error: %w", err)
+			return sessionEnded, fmt.Errorf("HTTP server error: %w", err)
 		}
-		return nil
+		return sessionEnded, nil
 	}
 }
 
 func shutdownExpiredServer(srv shutdownServer, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return shutdownSessionServer(context.Background(), srv, timeout)
+}
+
+func shutdownRequestedServer(ctx context.Context, srv shutdownServer, timeout time.Duration) error {
+	return shutdownSessionServer(ctx, srv, timeout)
+}
+
+func shutdownSessionServer(parent context.Context, srv shutdownServer, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	err := srv.Shutdown(ctx)
@@ -374,6 +421,9 @@ func shutdownExpiredServer(srv shutdownServer, timeout time.Duration) error {
 	}
 
 	closeErr := srv.Close()
+	if cause := context.Cause(parent); cause != nil {
+		return errors.Join(cause, closeErr)
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		if closeErr != nil {
 			return fmt.Errorf("force close server after drain timeout: %w", closeErr)
@@ -382,4 +432,21 @@ func shutdownExpiredServer(srv shutdownServer, timeout time.Duration) error {
 	}
 
 	return errors.Join(err, closeErr)
+}
+
+func shutdownTextProcessor(ctx context.Context, processor *receive.TextProcessor) error {
+	done := make(chan struct{})
+	go func() {
+		processor.Shutdown()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		processor.Close()
+		<-done
+		return context.Cause(ctx)
+	}
 }
