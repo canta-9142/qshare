@@ -194,7 +194,12 @@ func validatePrivilegedExecutable(path string, stat func(string) (os.FileInfo, e
 			return fmt.Errorf("inspect privileged executable path %q: %w", current, err)
 		}
 		owner, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || owner.Uid != 0 || info.Mode().Perm()&0o022 != 0 {
+		writable := info.Mode().Perm()&0o022 != 0
+		// In a sticky directory, only the entry owner, directory owner, or root
+		// can remove or rename an entry. Root ownership therefore keeps the next
+		// validated path component non-replaceable, as it does in /nix/store.
+		stickyDirectory := info.IsDir() && info.Mode()&os.ModeSticky != 0
+		if !ok || owner.Uid != 0 || (writable && !stickyDirectory) {
 			return fmt.Errorf("refusing to elevate writable qshare path %q; install qshare in a root-owned location", current)
 		}
 		parent := filepath.Dir(current)
