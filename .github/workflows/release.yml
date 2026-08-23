@@ -35,6 +35,9 @@ jobs:
           go-version: "1.26.6"
           cache-dependency-path: go.sum
 
+      - name: Test installer
+        run: sh tests/install_test.sh
+
       - name: Test
         run: go test ./...
 
@@ -103,6 +106,9 @@ jobs:
       GH_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
       - name: Download binaries
         uses: actions/download-artifact@v8
         with:
@@ -110,13 +116,17 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Add installer
+        run: install -m 0755 install.sh dist/install.sh
+
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum qshare-linux-amd64 qshare-linux-arm64 > checksums.txt
+        run: sha256sum install.sh qshare-linux-amd64 qshare-linux-arm64 > checksums.txt
 
       - name: Create draft release
         run: |
           gh release create "$GITHUB_REF_NAME" \
+            dist/install.sh \
             dist/qshare-linux-amd64 \
             dist/qshare-linux-arm64 \
             dist/checksums.txt \
