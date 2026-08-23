@@ -4,6 +4,7 @@ package network
 
 import (
 	"net"
+	"net/netip"
 	"strings"
 	"testing"
 )
@@ -62,6 +63,57 @@ func TestIPv4FromNetAddr(t *testing.T) {
 			got, ok := ipv4FromNetAddr(tt.addr)
 			if ok != tt.ok || (ok && got.String() != tt.want) {
 				t.Fatalf("ipv4FromNetAddr() = %v, %v; want %s, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestIPv4PrefixFromNetAddr(t *testing.T) {
+	tests := []struct {
+		name string
+		addr net.Addr
+		want string
+		ok   bool
+	}{
+		{
+			name: "IPNet",
+			addr: &net.IPNet{
+				IP:   net.ParseIP("192.0.2.23"),
+				Mask: net.CIDRMask(24, 32),
+			},
+			want: "192.0.2.0/24",
+			ok:   true,
+		},
+		{
+			name: "IPAddr",
+			addr: &net.IPAddr{IP: net.ParseIP("198.51.100.2")},
+			want: "198.51.100.2/32",
+			ok:   true,
+		},
+		{
+			name: "invalid mask",
+			addr: &net.IPNet{
+				IP:   net.ParseIP("192.0.2.23"),
+				Mask: net.IPMask{255, 0, 255, 0},
+			},
+		},
+		{
+			name: "IPv6",
+			addr: &net.IPNet{
+				IP:   net.ParseIP("2001:db8::1"),
+				Mask: net.CIDRMask(64, 128),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ipv4PrefixFromNetAddr(tt.addr)
+			if ok != tt.ok {
+				t.Fatalf("ipv4PrefixFromNetAddr() ok = %v, want %v", ok, tt.ok)
+			}
+			if ok && got != netip.MustParsePrefix(tt.want) {
+				t.Fatalf("ipv4PrefixFromNetAddr() = %v, want %s", got, tt.want)
 			}
 		})
 	}

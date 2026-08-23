@@ -21,22 +21,26 @@ var excludedInterfaceKeywords = []string{
 	"dummy", "team",
 }
 
-func advertiseAddress() (netip.Addr, error) {
+func advertiseEndpoint() (Endpoint, error) {
 	ifaces, err := getValidInterfaces()
 	if err != nil {
-		return netip.Addr{}, err
+		return Endpoint{}, err
 	}
 
 	ifaces = prioritizeDefaultRouteInterfaces(ifaces)
 
 	for _, iface := range ifaces {
-		addr, ok := firstIPv4Address(iface)
+		prefix, ok := firstIPv4Prefix(iface)
 		if ok {
-			return addr, nil
+			return Endpoint{
+				Address:   prefix.Addr(),
+				Prefix:    prefix.Masked(),
+				Interface: iface.Name,
+			}, nil
 		}
 	}
 
-	return netip.Addr{}, ErrNoLANAddress
+	return Endpoint{}, ErrNoLANAddress
 }
 
 func getValidInterfaces() ([]net.Interface, error) {
@@ -91,19 +95,45 @@ func isValidInterface(iface net.Interface) bool {
 }
 
 func firstIPv4Address(iface net.Interface) (netip.Addr, bool) {
+	prefix, ok := firstIPv4Prefix(iface)
+	if !ok {
+		return netip.Addr{}, false
+	}
+	return prefix.Addr(), true
+}
+
+func firstIPv4Prefix(iface net.Interface) (netip.Prefix, bool) {
 	addrs, err := iface.Addrs()
 	if err != nil {
-		return netip.Addr{}, false
+		return netip.Prefix{}, false
 	}
 
 	for _, addr := range addrs {
-		ip, ok := ipv4FromNetAddr(addr)
+		prefix, ok := ipv4PrefixFromNetAddr(addr)
 		if ok {
-			return ip, true
+			return prefix, true
 		}
 	}
 
-	return netip.Addr{}, false
+	return netip.Prefix{}, false
+}
+
+func ipv4PrefixFromNetAddr(addr net.Addr) (netip.Prefix, bool) {
+	ip, ok := ipv4FromNetAddr(addr)
+	if !ok {
+		return netip.Prefix{}, false
+	}
+
+	bits := 32
+	if ipNet, ok := addr.(*net.IPNet); ok {
+		ones, size := ipNet.Mask.Size()
+		if ones < 0 || size != 32 {
+			return netip.Prefix{}, false
+		}
+		bits = ones
+	}
+
+	return netip.PrefixFrom(ip, bits).Masked(), true
 }
 
 func ipv4FromNetAddr(addr net.Addr) (netip.Addr, bool) {
