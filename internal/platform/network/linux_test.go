@@ -81,7 +81,7 @@ func TestIPv4PrefixFromNetAddr(t *testing.T) {
 				IP:   net.ParseIP("192.0.2.23"),
 				Mask: net.CIDRMask(24, 32),
 			},
-			want: "192.0.2.0/24",
+			want: "192.0.2.23/24",
 			ok:   true,
 		},
 		{

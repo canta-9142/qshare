@@ -133,7 +133,9 @@ func ipv4PrefixFromNetAddr(addr net.Addr) (netip.Prefix, bool) {
 		bits = ones
 	}
 
-	return netip.PrefixFrom(ip, bits).Masked(), true
+	// Preserve the interface's host address here. The caller masks the prefix
+	// separately when it needs the source subnet for the firewall rule.
+	return netip.PrefixFrom(ip, bits), true
 }
 
 func ipv4FromNetAddr(addr net.Addr) (netip.Addr, bool) {
