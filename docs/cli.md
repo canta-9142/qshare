@@ -89,7 +89,7 @@ qshare adds no separator between submissions.
 
 Help and version information go to stdout. Invalid command syntax and usage
 messages go to stderr. Unstamped local builds report `qshare devel`; release
-and package builds report their tagged version, such as `qshare v0.6.0`.
+and package builds report their tagged version, such as `qshare v0.6.1`.
 
 ## Exit codes
 

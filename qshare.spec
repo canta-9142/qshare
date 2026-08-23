@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           qshare
-Version:        0.6.0
+Version:        0.6.1
 Release:        1%{?dist}
 Summary:        Local file sharing with browser-capable devices
 
@@ -53,8 +53,8 @@ install -Dpm0755 qshare %{buildroot}%{_bindir}/qshare
 %{_bindir}/qshare
 
 %changelog
-* Tue Aug 18 2026 Kanta Imai <work@floating-gate.com> - 0.6.0-1
-- Release version 0.6.0
+* Tue Aug 18 2026 Kanta Imai <work@floating-gate.com> - 0.6.1-1
+- Release version 0.6.1
 
 * Tue Aug 18 2026 Kanta Imai <work@floating-gate.com> - 0.5.5-1
 - Add the Copr package specification
