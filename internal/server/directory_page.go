@@ -53,12 +53,7 @@ func (s *Server) directoryPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Frame-Options", "DENY")
+	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'")
 	data := directoryPageData{Name: node.Name(), ArchiveURL: "/z/" + token}
 	var lineage []*share.Node
 	for current := node; current != nil; current = current.Parent() {
