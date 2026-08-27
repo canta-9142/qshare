@@ -1,5 +1,5 @@
 pkgname=qshare
-pkgver=0.6.1
+pkgver=0.6.2
 pkgrel=1
 pkgdesc='Local file sharing with browser-capable devices'
 arch=('x86_64')

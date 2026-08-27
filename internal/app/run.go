@@ -55,26 +55,11 @@ func (a *Application) runSendDirectory(ctx context.Context, req Request) (runErr
 			runErr = errors.Join(runErr, fmt.Errorf("failed to close directory: %w", err))
 		}
 	}()
-	endpoint, err := a.advertiseEndpoint()
-	if err != nil {
-		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
-	}
 	sess, err := session.NewSendDirectory(directory, req.Lifetime)
 	if err != nil {
 		return err
 	}
-	srv, port, err := a.startLANServer(ctx, endpoint, sess, a.newDirectoryServer(sess))
-	if err != nil {
-		return fmt.Errorf("failed to start server: %w", err)
-	}
-	accessURL := url.URL{Scheme: "http", Host: net.JoinHostPort(endpoint.Address.String(), port), Path: "/s/" + sess.Token().String()}
-	fmt.Fprintf(a.stderr, "\nQshare\n\nSharing directory  %s\n\n", directory.Root().Name())
-	if err := a.renderQR(a.stderr, accessURL.String()); err != nil {
-		return errors.Join(fmt.Errorf("failed to render QR code: %w", err), srv.Close())
-	}
-	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL.String(), req.Lifetime)
-	a.printQuitHint()
-	_, err = a.runSession(ctx, sess, srv)
+	_, err = a.runPreparedSession(ctx, sess, a.newDirectoryServer, fmt.Sprintf("Sharing directory  %s", directory.Root().Name()), req.Lifetime)
 	return err
 }
 
@@ -93,47 +78,12 @@ func (a *Application) runSendFile(ctx context.Context, req Request) (runErr erro
 		}
 	}()
 
-	// determine advertise address
-	endpoint, err := a.advertiseEndpoint()
-	if err != nil {
-		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
-	}
-
-	// create session
 	sess, err := session.NewSendFiles(resources, req.Lifetime)
 	if err != nil {
 		return err
 	}
 
-	// start server
-	srv, port, err := a.startLANServer(ctx, endpoint, sess, a.newSendServer(sess))
-	if err != nil {
-		return fmt.Errorf("failed to start server: %w", err)
-	}
-	downloadURL := url.URL{
-		Scheme: "http",
-		Host:   net.JoinHostPort(endpoint.Address.String(), port),
-		Path:   "/s/" + sess.Token().String(),
-	}
-
-	payload := downloadURL.String()
-
-	fmt.Fprintf(a.stderr, "\nQshare\n\n")
-	fmt.Fprintf(a.stderr, "Sharing  %d file(s)\n\n", len(resources.Resources()))
-
-	if err := a.renderQR(a.stderr, payload); err != nil {
-		return errors.Join(
-			fmt.Errorf("failed to render QR code: %w", err),
-			srv.Close(),
-		)
-	}
-
-	fmt.Fprintf(a.stderr, "\n%s\n\n", payload)
-
-	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime.String())
-	a.printQuitHint()
-
-	_, err = a.runSession(ctx, sess, srv)
+	_, err = a.runPreparedSession(ctx, sess, a.newSendServer, fmt.Sprintf("Sharing  %d file(s)", len(resources.Resources())), req.Lifetime)
 	return err
 }
 
@@ -143,37 +93,7 @@ func (a *Application) runSendText(ctx context.Context, req Request) error {
 		return err
 	}
 
-	endpoint, err := a.advertiseEndpoint()
-	if err != nil {
-		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
-	}
-
-	srv, port, err := a.startLANServer(ctx, endpoint, sess, a.newTextServer(sess))
-	if err != nil {
-		return fmt.Errorf("failed to start server: %w", err)
-	}
-
-	accessURL := url.URL{
-		Scheme: "http",
-		Host:   net.JoinHostPort(endpoint.Address.String(), port),
-		Path:   "/s/" + sess.Token().String(),
-	}
-
-	fmt.Fprintf(a.stderr, "\nQshare\n\n")
-	fmt.Fprintf(a.stderr, "Sharing text\n\n")
-
-	if err := a.renderQR(a.stderr, accessURL.String()); err != nil {
-		return errors.Join(
-			fmt.Errorf("failed to render QR code: %w", err),
-			srv.Close(),
-		)
-	}
-
-	fmt.Fprintf(a.stderr, "\n%s\n\n", accessURL.String())
-	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime)
-	a.printQuitHint()
-
-	_, err = a.runSession(ctx, sess, srv)
+	_, err = a.runPreparedSession(ctx, sess, a.newTextServer, "Sharing text", req.Lifetime)
 	return err
 }
 
@@ -215,37 +135,10 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		}
 	}()
 
-	endpoint, err := a.advertiseEndpoint()
-	if err != nil {
-		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
+	newServer := func(sess *session.Session) sessionServer {
+		return a.newReceiveServer(sess, store, textProcessor)
 	}
-
-	srv, port, err := a.startLANServer(ctx, endpoint, sess, a.newReceiveServer(sess, store, textProcessor))
-	if err != nil {
-		return fmt.Errorf("failed to start server: %w", err)
-	}
-
-	accessURL := url.URL{
-		Scheme: "http",
-		Host:   net.JoinHostPort(endpoint.Address.String(), port),
-		Path:   "/s/" + sess.Token().String(),
-	}
-
-	fmt.Fprintf(a.stderr, "\nQshare\n\n")
-	fmt.Fprintf(a.stderr, "Receiving into %s\n\n", req.ReceiveDir)
-
-	if err := a.renderQR(a.stderr, accessURL.String()); err != nil {
-		return errors.Join(
-			fmt.Errorf("failed to render QR code: %w", err),
-			srv.Close(),
-		)
-	}
-
-	fmt.Fprintf(a.stderr, "\n%s\n\n", accessURL.String())
-	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime)
-	a.printQuitHint()
-
-	end, err := a.runSession(ctx, sess, srv)
+	end, err := a.runPreparedSession(ctx, sess, newServer, "Receiving into "+req.ReceiveDir, req.Lifetime)
 	if err != nil || end != sessionShutdownRequested {
 		return err
 	}
@@ -255,10 +148,59 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 	return err
 }
 
-func (a *Application) printQuitHint() {
-	if a.shutdownRequested != nil {
+func (a *Application) runPreparedSession(
+	ctx context.Context,
+	sess *session.Session,
+	newServer func(*session.Session) sessionServer,
+	heading string,
+	lifetime time.Duration,
+) (sessionEnd, error) {
+	endpoint, err := a.advertiseEndpoint()
+	if err != nil {
+		return sessionEnded, fmt.Errorf("failed to determine LAN advertise address: %w", err)
+	}
+
+	srv, port, err := a.startLANServer(ctx, endpoint, sess, newServer(sess))
+	if err != nil {
+		return sessionEnded, fmt.Errorf("failed to start server: %w", err)
+	}
+
+	accessURLValue := url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(endpoint.Address.String(), port),
+		Path:   "/s/" + sess.Token().String(),
+	}
+	accessURL := accessURLValue.String()
+
+	fmt.Fprintf(a.stderr, "\nQshare\n\n%s\n\n", heading)
+	if err := a.renderQR(a.stderr, accessURL); err != nil {
+		return sessionEnded, errors.Join(
+			fmt.Errorf("failed to render QR code: %w", err),
+			srv.Close(),
+		)
+	}
+
+	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL, lifetime)
+	if err := a.enableInteractiveShutdown(srv); err != nil {
+		return sessionEnded, err
+	}
+
+	return a.runSession(ctx, sess, srv)
+}
+
+func (a *Application) enableInteractiveShutdown(srv sessionServer) error {
+	if a.startShutdownListener == nil {
+		return nil
+	}
+	shutdownRequested, err := a.startShutdownListener()
+	if err != nil {
+		return errors.Join(fmt.Errorf("configure quit key: %w", err), srv.Close())
+	}
+	a.shutdownRequested = shutdownRequested
+	if shutdownRequested != nil {
 		fmt.Fprint(a.stderr, "Press q to quit.\n\n")
 	}
+	return nil
 }
 
 // startLANServer binds an available random port and opens its temporary firewall rule.

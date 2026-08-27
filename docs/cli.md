@@ -68,13 +68,13 @@ receives a termination signal, the user presses `q`, or it encounters a fatal
 server error. A completed transfer does not end the session.
 
 When stdin is a terminal, qshare switches it to non-canonical, no-echo input
-while the session runs and prints `Press q to quit.` to stderr. Pressing `q`
-does not require Enter. It stops new HTTP requests, gives active requests up to
-30 seconds to finish, drains accepted text submissions, restores the terminal,
-and exits successfully. Terminal signal generation remains enabled, so Ctrl+C
-retains normal SIGINT behavior instead of being treated as an input byte.
-Non-terminal stdin continues to select text send mode and does not enable the
-quit key.
+only after the server and firewall are ready and the QR code has been rendered.
+It then prints `Press q to quit.` to stderr. Pressing `q` does not require Enter.
+It stops new HTTP requests, gives active requests up to 30 seconds to finish,
+drains accepted text submissions, restores the terminal, and exits successfully.
+Terminal signal generation remains enabled, so Ctrl+C retains normal SIGINT
+behavior instead of being treated as an input byte. Non-terminal stdin continues
+to select text send mode and does not enable the quit key.
 
 ## Output streams
 
@@ -89,7 +89,7 @@ qshare adds no separator between submissions.
 
 Help and version information go to stdout. Invalid command syntax and usage
 messages go to stderr. Unstamped local builds report `qshare devel`; release
-and package builds report their tagged version, such as `qshare v0.6.1`.
+and package builds report their tagged version, such as `qshare v0.6.2`.
 
 ## Exit codes
 
