@@ -2,10 +2,10 @@ Format: 1.0
 Source: qshare
 Binary: qshare
 Architecture: amd64 arm64 armhf
-Version: 0.6.1-1
+Version: 0.6.2-1
 Maintainer: Kanta Imai <work@floating-gate.com>
 Homepage: https://github.com/canta-9142/qshare
 Standards-Version: 4.7.2
 Build-Depends: debhelper-compat (= 13), golang-go (>= 1.24)
 DEBTRANSFORM-RELEASE: 1
-DEBTRANSFORM-TAR: qshare-0.6.1.tar.gz
+DEBTRANSFORM-TAR: qshare-0.6.2.tar.gz

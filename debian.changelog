@@ -1,3 +1,9 @@
+qshare (0.6.2-1) unstable; urgency=medium
+
+  * Release version 0.6.2.
+
+ -- Kanta Imai <work@floating-gate.com>  Fri, 28 Aug 2026 00:00:00 +0900
+
 qshare (0.6.1-1) unstable; urgency=medium
 
   * Release version 0.6.1.
