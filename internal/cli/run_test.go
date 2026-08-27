@@ -3,11 +3,10 @@ package cli
 import (
 	"bytes"
 	"errors"
-	"strings"
 	"testing"
 )
 
-func TestRunWithInputClosesQuitListenerAfterRuntimeFailure(t *testing.T) {
+func TestRunWithInputDoesNotStartQuitListenerBeforeSessionReady(t *testing.T) {
 	listener := &fakeTerminalQuitListener{quit: make(chan struct{})}
 	starts := 0
 	start := func() (terminalQuitListener, error) {
@@ -29,30 +28,8 @@ func TestRunWithInputClosesQuitListenerAfterRuntimeFailure(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("runWithInputAndQuitListener() = %d, want 1", code)
 	}
-	if starts != 1 || listener.closeCalls != 1 {
-		t.Fatalf("listener starts=%d closes=%d, want starts=1 closes=1", starts, listener.closeCalls)
-	}
-}
-
-func TestRunWithInputReportsQuitListenerStartupFailure(t *testing.T) {
-	want := errors.New("terminal failed")
-	var stderr bytes.Buffer
-
-	code := runWithInputAndQuitListener(
-		[]string{"missing-file"},
-		"devel",
-		nil,
-		true,
-		&bytes.Buffer{},
-		&stderr,
-		func() (terminalQuitListener, error) { return nil, want },
-	)
-
-	if code != 1 {
-		t.Fatalf("runWithInputAndQuitListener() = %d, want 1", code)
-	}
-	if got := stderr.String(); !strings.Contains(got, "configure quit key: terminal failed") {
-		t.Fatalf("stderr = %q, want quit-listener diagnostic", got)
+	if starts != 0 || listener.closeCalls != 0 {
+		t.Fatalf("listener starts=%d closes=%d, want starts=0 closes=0", starts, listener.closeCalls)
 	}
 }
 
