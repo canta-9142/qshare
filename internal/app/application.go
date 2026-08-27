@@ -51,27 +51,28 @@ type firewallLease interface {
 }
 
 type Application struct {
-	stderr             io.Writer
-	stdout             io.Writer
-	shutdownRequested  <-chan struct{}
-	advertiseEndpoint  func() (network.Endpoint, error)
-	selectServerPort   func() (uint16, error)
-	openFirewall       func(context.Context, firewall.Rule) (firewallLease, error)
-	newSendServer      func(*session.Session) sessionServer
-	newDirectoryServer func(*session.Session) sessionServer
-	newTextServer      func(*session.Session) sessionServer
-	newReceiveServer   func(*session.Session, receiveStore, textSubmitter) sessionServer
-	openReceiveStore   func(string) (receiveStore, error)
-	newClipboardSink   func(string) (receive.TextSink, error)
-	openCollection     func([]string) (*share.Collection, error)
-	openDirectory      func(string) (*share.Directory, error)
-	renderQR           func(io.Writer, string) error
+	stderr                io.Writer
+	stdout                io.Writer
+	startShutdownListener func() (<-chan struct{}, error)
+	shutdownRequested     <-chan struct{}
+	advertiseEndpoint     func() (network.Endpoint, error)
+	selectServerPort      func() (uint16, error)
+	openFirewall          func(context.Context, firewall.Rule) (firewallLease, error)
+	newSendServer         func(*session.Session) sessionServer
+	newDirectoryServer    func(*session.Session) sessionServer
+	newTextServer         func(*session.Session) sessionServer
+	newReceiveServer      func(*session.Session, receiveStore, textSubmitter) sessionServer
+	openReceiveStore      func(string) (receiveStore, error)
+	newClipboardSink      func(string) (receive.TextSink, error)
+	openCollection        func([]string) (*share.Collection, error)
+	openDirectory         func(string) (*share.Directory, error)
+	renderQR              func(io.Writer, string) error
 }
 
 type Dependencies struct {
-	Stdout            io.Writer
-	Stderr            io.Writer
-	ShutdownRequested <-chan struct{}
+	Stdout                io.Writer
+	Stderr                io.Writer
+	StartShutdownListener func() (<-chan struct{}, error)
 }
 
 type textSubmitter interface {
@@ -93,11 +94,11 @@ func New(deps Dependencies) *Application {
 		stdout = io.Discard
 	}
 	return &Application{
-		stdout:            stdout,
-		stderr:            deps.Stderr,
-		shutdownRequested: deps.ShutdownRequested,
-		advertiseEndpoint: network.AdvertiseEndpoint,
-		selectServerPort:  randomServerPort,
+		stdout:                stdout,
+		stderr:                deps.Stderr,
+		startShutdownListener: deps.StartShutdownListener,
+		advertiseEndpoint:     network.AdvertiseEndpoint,
+		selectServerPort:      randomServerPort,
 		openFirewall: func(ctx context.Context, rule firewall.Rule) (firewallLease, error) {
 			return firewall.Open(ctx, rule)
 		},

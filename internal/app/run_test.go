@@ -76,7 +76,17 @@ func TestApplicationRunInteractiveShutdown(t *testing.T) {
 	application, fake, stderr, path := newTestApplication(t)
 	shutdownRequested := make(chan struct{})
 	close(shutdownRequested)
-	application.shutdownRequested = shutdownRequested
+	qrRendered := false
+	application.renderQR = func(io.Writer, string) error {
+		qrRendered = true
+		return nil
+	}
+	application.startShutdownListener = func() (<-chan struct{}, error) {
+		if !qrRendered {
+			t.Fatal("shutdown listener started before QR rendering completed")
+		}
+		return shutdownRequested, nil
+	}
 
 	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
 	if err != nil {
@@ -94,7 +104,9 @@ func TestApplicationInteractiveShutdownCanBeInterrupted(t *testing.T) {
 	application, fake, _, path := newTestApplication(t)
 	shutdownRequested := make(chan struct{})
 	close(shutdownRequested)
-	application.shutdownRequested = shutdownRequested
+	application.startShutdownListener = func() (<-chan struct{}, error) {
+		return shutdownRequested, nil
+	}
 	shutdownStarted := make(chan struct{})
 	fake.shutdown = func(ctx context.Context) error {
 		close(shutdownStarted)
@@ -141,12 +153,43 @@ func TestApplicationRunClosesServerWhenQRRenderingFails(t *testing.T) {
 	}
 	renderErr := errors.New("render failed")
 	application.renderQR = func(io.Writer, string) error { return renderErr }
+	listenerStarted := false
+	application.startShutdownListener = func() (<-chan struct{}, error) {
+		listenerStarted = true
+		return nil, nil
+	}
 	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
 	if !errors.Is(err, renderErr) {
 		t.Fatalf("Run() error = %v, want render error", err)
 	}
 	if fake.closeCalls != 1 {
 		t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
+	}
+	if lease.closeCalls != 1 {
+		t.Errorf("firewall Close() calls = %d, want 1", lease.closeCalls)
+	}
+	if listenerStarted {
+		t.Fatal("shutdown listener started after QR rendering failed")
+	}
+}
+
+func TestApplicationClosesSessionWhenShutdownListenerFails(t *testing.T) {
+	application, fake, _, path := newTestApplication(t)
+	lease := &fakeFirewallLease{}
+	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
+		return lease, nil
+	}
+	want := errors.New("terminal failed")
+	application.startShutdownListener = func() (<-chan struct{}, error) {
+		return nil, want
+	}
+
+	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
+	if !errors.Is(err, want) {
+		t.Fatalf("Run() error = %v, want shutdown listener error", err)
+	}
+	if fake.closeCalls != 1 {
+		t.Errorf("server Close() calls = %d, want 1", fake.closeCalls)
 	}
 	if lease.closeCalls != 1 {
 		t.Errorf("firewall Close() calls = %d, want 1", lease.closeCalls)
@@ -419,8 +462,10 @@ func TestApplicationInteractiveShutdownDrainsReceivedText(t *testing.T) {
 	close(shutdownRequested)
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
 	application := New(Dependencies{
-		Stderr:            io.Discard,
-		ShutdownRequested: shutdownRequested,
+		Stderr: io.Discard,
+		StartShutdownListener: func() (<-chan struct{}, error) {
+			return shutdownRequested, nil
+		},
 	})
 	configureTestNetworking(application)
 	application.openReceiveStore = func(string) (receiveStore, error) {

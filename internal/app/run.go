@@ -73,7 +73,9 @@ func (a *Application) runSendDirectory(ctx context.Context, req Request) (runErr
 		return errors.Join(fmt.Errorf("failed to render QR code: %w", err), srv.Close())
 	}
 	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL.String(), req.Lifetime)
-	a.printQuitHint()
+	if err := a.enableInteractiveShutdown(srv); err != nil {
+		return err
+	}
 	_, err = a.runSession(ctx, sess, srv)
 	return err
 }
@@ -131,7 +133,9 @@ func (a *Application) runSendFile(ctx context.Context, req Request) (runErr erro
 	fmt.Fprintf(a.stderr, "\n%s\n\n", payload)
 
 	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime.String())
-	a.printQuitHint()
+	if err := a.enableInteractiveShutdown(srv); err != nil {
+		return err
+	}
 
 	_, err = a.runSession(ctx, sess, srv)
 	return err
@@ -171,7 +175,9 @@ func (a *Application) runSendText(ctx context.Context, req Request) error {
 
 	fmt.Fprintf(a.stderr, "\n%s\n\n", accessURL.String())
 	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime)
-	a.printQuitHint()
+	if err := a.enableInteractiveShutdown(srv); err != nil {
+		return err
+	}
 
 	_, err = a.runSession(ctx, sess, srv)
 	return err
@@ -243,7 +249,9 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 
 	fmt.Fprintf(a.stderr, "\n%s\n\n", accessURL.String())
 	fmt.Fprintf(a.stderr, "This URL expires after %s.\n\n", req.Lifetime)
-	a.printQuitHint()
+	if err := a.enableInteractiveShutdown(srv); err != nil {
+		return err
+	}
 
 	end, err := a.runSession(ctx, sess, srv)
 	if err != nil || end != sessionShutdownRequested {
@@ -255,10 +263,19 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 	return err
 }
 
-func (a *Application) printQuitHint() {
-	if a.shutdownRequested != nil {
+func (a *Application) enableInteractiveShutdown(srv sessionServer) error {
+	if a.startShutdownListener == nil {
+		return nil
+	}
+	shutdownRequested, err := a.startShutdownListener()
+	if err != nil {
+		return errors.Join(fmt.Errorf("configure quit key: %w", err), srv.Close())
+	}
+	a.shutdownRequested = shutdownRequested
+	if shutdownRequested != nil {
 		fmt.Fprint(a.stderr, "Press q to quit.\n\n")
 	}
+	return nil
 }
 
 // startLANServer binds an available random port and opens its temporary firewall rule.
