@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/alexflint/go-arg"
 	"github.com/canta-9142/qshare/internal/app"
@@ -81,126 +82,113 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		return parseResult{}, fmt.Errorf("too many files: got %d, maximum is %d", len(args.Files), share.MaxFiles)
 	}
 
-	if !stdin.terminal {
-		switch {
-		case len(args.Files) != 0:
-			return parseResult{}, errors.New("piped stdin cannot be combined with a file")
-		case args.Text != nil:
-			return parseResult{}, errors.New("piped stdin cannot be combined with --text")
-		case args.Clipboard != nil:
-			return parseResult{}, errors.New("piped stdin cannot be combined with --clipboard")
-		case args.ReceiveDir != "":
-			return parseResult{}, errors.New("piped stdin cannot be combined with --receive-dir")
-		}
-
-		value, err := io.ReadAll(io.LimitReader(stdin.reader, share.MaxTextSize+1))
-		if err != nil {
-			return parseResult{}, fmt.Errorf("read text from stdin: %w", err)
-		}
-		text, err := share.NewText(value)
-		if err != nil {
-			return parseResult{}, fmt.Errorf("invalid stdin text: %w", err)
-		}
-
-		return parseResult{
-			Request: app.Request{
-				Operation: app.OperationSendText,
-				Text:      text,
-				Lifetime:  args.Expire,
-			},
-		}, nil
-	}
-
-	if args.Text != nil {
-		if len(args.Files) != 0 {
-			return parseResult{}, errors.New("--text cannot be combined with a file")
-		}
-		if args.ReceiveDir != "" {
-			return parseResult{}, errors.New("--receive-dir cannot be used when sharing text")
-		}
-		if args.Clipboard != nil {
-			return parseResult{}, errors.New("--text cannot be combined with --clipboard")
-		}
-
-		text, err := share.NewText([]byte(*args.Text))
-		if err != nil {
-			return parseResult{}, fmt.Errorf("invalid --text value: %w", err)
-		}
-
-		return parseResult{
-			Request: app.Request{
-				Operation: app.OperationSendText,
-				Text:      text,
-				Lifetime:  args.Expire,
-			},
-		}, nil
-	}
-
-	if args.Clipboard != nil {
-		if len(args.Files) != 0 {
-			return parseResult{}, errors.New("--clipboard cannot be combined with a file")
-		}
-		if *args.Clipboard == "" {
-			return parseResult{}, errors.New("--clipboard requires a non-empty backend")
-		}
-
-		receiveDir := args.ReceiveDir
-		if receiveDir == "" {
-			dir, err := defaultReceiveDir()
-			if err != nil {
-				return parseResult{}, err
-			}
-			receiveDir = dir
-		}
-
-		return parseResult{
-			Request: app.Request{
-				Operation:  app.OperationReceive,
-				ReceiveDir: receiveDir,
-				Clipboard:  *args.Clipboard,
-				Lifetime:   args.Expire,
-			},
-		}, nil
-	}
-
-	switch len(args.Files) {
-	case 0:
-		receiveDir := args.ReceiveDir
-		if receiveDir == "" {
-			dir, err := defaultReceiveDir()
-			if err != nil {
-				return parseResult{}, err
-			}
-			receiveDir = dir
-		}
-
-		return parseResult{
-			Request: app.Request{
-				Operation:  app.OperationReceive,
-				ReceiveDir: receiveDir,
-				Clipboard:  "auto",
-				Lifetime:   args.Expire,
-			},
-		}, nil
-
+	switch {
+	case !stdin.terminal:
+		return mapPipedInput(args, stdin.reader)
+	case args.Text != nil:
+		return mapExplicitText(args)
+	case args.Clipboard != nil:
+		return mapClipboardReceive(args)
+	case len(args.Files) == 0:
+		return mapReceive(args, "auto")
 	default:
-		if args.ReceiveDir != "" {
-			return parseResult{}, errors.New("--receive-dir cannot be used when sharing a file")
-		}
+		return mapSend(args)
+	}
+}
 
-		operation, err := classifySendPaths(args.Files)
+func mapPipedInput(args arguments, reader io.Reader) (parseResult, error) {
+	switch {
+	case len(args.Files) != 0:
+		return parseResult{}, errors.New("piped stdin cannot be combined with a file")
+	case args.Text != nil:
+		return parseResult{}, errors.New("piped stdin cannot be combined with --text")
+	case args.Clipboard != nil:
+		return parseResult{}, errors.New("piped stdin cannot be combined with --clipboard")
+	case args.ReceiveDir != "":
+		return parseResult{}, errors.New("piped stdin cannot be combined with --receive-dir")
+	}
+
+	value, err := io.ReadAll(io.LimitReader(reader, share.MaxTextSize+1))
+	if err != nil {
+		return parseResult{}, fmt.Errorf("read text from stdin: %w", err)
+	}
+	text, err := share.NewText(value)
+	if err != nil {
+		return parseResult{}, fmt.Errorf("invalid stdin text: %w", err)
+	}
+
+	return textSendResult(text, args.Expire), nil
+}
+
+func mapExplicitText(args arguments) (parseResult, error) {
+	switch {
+	case len(args.Files) != 0:
+		return parseResult{}, errors.New("--text cannot be combined with a file")
+	case args.ReceiveDir != "":
+		return parseResult{}, errors.New("--receive-dir cannot be used when sharing text")
+	case args.Clipboard != nil:
+		return parseResult{}, errors.New("--text cannot be combined with --clipboard")
+	}
+
+	text, err := share.NewText([]byte(*args.Text))
+	if err != nil {
+		return parseResult{}, fmt.Errorf("invalid --text value: %w", err)
+	}
+
+	return textSendResult(text, args.Expire), nil
+}
+
+func textSendResult(text share.Text, lifetime time.Duration) parseResult {
+	return parseResult{Request: app.Request{
+		Operation: app.OperationSendText,
+		Text:      text,
+		Lifetime:  lifetime,
+	}}
+}
+
+func mapClipboardReceive(args arguments) (parseResult, error) {
+	if len(args.Files) != 0 {
+		return parseResult{}, errors.New("--clipboard cannot be combined with a file")
+	}
+	if *args.Clipboard == "" {
+		return parseResult{}, errors.New("--clipboard requires a non-empty backend")
+	}
+
+	return mapReceive(args, *args.Clipboard)
+}
+
+func mapReceive(args arguments, clipboard string) (parseResult, error) {
+	receiveDir := args.ReceiveDir
+	if receiveDir == "" {
+		var err error
+		receiveDir, err = defaultReceiveDir()
 		if err != nil {
 			return parseResult{}, err
 		}
-		return parseResult{
-			Request: app.Request{
-				Operation: operation,
-				Paths:     append([]string(nil), args.Files...),
-				Lifetime:  args.Expire,
-			},
-		}, nil
-
 	}
+
+	return parseResult{Request: app.Request{
+		Operation:  app.OperationReceive,
+		ReceiveDir: receiveDir,
+		Clipboard:  clipboard,
+		Lifetime:   args.Expire,
+	}}, nil
+}
+
+func mapSend(args arguments) (parseResult, error) {
+	if args.ReceiveDir != "" {
+		return parseResult{}, errors.New("--receive-dir cannot be used when sharing a file")
+	}
+
+	operation, err := classifySendPaths(args.Files)
+	if err != nil {
+		return parseResult{}, err
+	}
+	return parseResult{Request: app.Request{
+		Operation: operation,
+		Paths:     append([]string(nil), args.Files...),
+		Lifetime:  args.Expire,
+	}}, nil
 }
 
 func classifySendPaths(paths []string) (app.Operation, error) {
