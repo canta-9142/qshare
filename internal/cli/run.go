@@ -62,36 +62,32 @@ func runWithInputAndQuitListener(
 	defer stopSignals()
 
 	var quitListener terminalQuitListener
-	if startQuitListener != nil {
-		quitListener, err = startQuitListener()
-		if err != nil {
-			fmt.Fprintf(stderr, "qshare: configure quit key: %v\n", err)
-			return 1
-		}
-	}
-
 	listenerWatchDone := make(chan struct{})
 	var listenerWatchExited chan struct{}
-	if quitListener != nil {
-		listenerWatchExited = make(chan struct{})
-		go func() {
-			defer close(listenerWatchExited)
-			select {
-			case <-ctx.Done():
-				_ = quitListener.Close()
-			case <-listenerWatchDone:
+	var startShutdownListener func() (<-chan struct{}, error)
+	if startQuitListener != nil {
+		startShutdownListener = func() (<-chan struct{}, error) {
+			listener, err := startQuitListener()
+			if err != nil {
+				return nil, err
 			}
-		}()
-	}
-
-	var shutdownRequested <-chan struct{}
-	if quitListener != nil {
-		shutdownRequested = quitListener.Quit()
+			quitListener = listener
+			listenerWatchExited = make(chan struct{})
+			go func() {
+				defer close(listenerWatchExited)
+				select {
+				case <-ctx.Done():
+					_ = listener.Close()
+				case <-listenerWatchDone:
+				}
+			}()
+			return listener.Quit(), nil
+		}
 	}
 	application := app.New(app.Dependencies{
-		Stdout:            stdout,
-		Stderr:            stderr,
-		ShutdownRequested: shutdownRequested,
+		Stdout:                stdout,
+		Stderr:                stderr,
+		StartShutdownListener: startShutdownListener,
 	})
 
 	err = application.Run(ctx, result.Request)

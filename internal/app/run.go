@@ -78,7 +78,6 @@ func (a *Application) runSendFile(ctx context.Context, req Request) (runErr erro
 		}
 	}()
 
-	// create session
 	sess, err := session.NewSendFiles(resources, req.Lifetime)
 	if err != nil {
 		return err
@@ -182,15 +181,26 @@ func (a *Application) runPreparedSession(
 	}
 
 	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL, lifetime)
-	a.printQuitHint()
+	if err := a.enableInteractiveShutdown(srv); err != nil {
+		return sessionEnded, err
+	}
 
 	return a.runSession(ctx, sess, srv)
 }
 
-func (a *Application) printQuitHint() {
-	if a.shutdownRequested != nil {
+func (a *Application) enableInteractiveShutdown(srv sessionServer) error {
+	if a.startShutdownListener == nil {
+		return nil
+	}
+	shutdownRequested, err := a.startShutdownListener()
+	if err != nil {
+		return errors.Join(fmt.Errorf("configure quit key: %w", err), srv.Close())
+	}
+	a.shutdownRequested = shutdownRequested
+	if shutdownRequested != nil {
 		fmt.Fprint(a.stderr, "Press q to quit.\n\n")
 	}
+	return nil
 }
 
 // startLANServer binds an available random port and opens its temporary firewall rule.
