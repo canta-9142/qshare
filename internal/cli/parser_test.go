@@ -354,6 +354,25 @@ func TestParseTextOption(t *testing.T) {
 	}
 }
 
+func TestParseTextOptionAcceptsHyphenPrefixedValue(t *testing.T) {
+	for _, option := range []string{"-t", "--text"} {
+		t.Run(option, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			result, err := parse([]string{option, "-hello"}, &stdout, &stderr)
+			if err != nil {
+				t.Fatalf("parse() error = %v", err)
+			}
+			if result.Exit {
+				t.Fatalf("parse() Exit = true, code %d", result.Code)
+			}
+			if result.Request.Operation != app.OperationSendText || result.Request.Text.String() != "-hello" {
+				t.Fatalf("Request = %+v, want text send request for -hello", result.Request)
+			}
+		})
+	}
+}
+
 func TestRunRejectsInvalidTextAsUsageError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
