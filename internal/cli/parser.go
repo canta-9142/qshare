@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -40,7 +41,7 @@ func parseWithInput(argv []string, stdin stdinInput, version string, stdout io.W
 		return parseResult{}, fmt.Errorf("create argument parser: %w", err)
 	}
 
-	err = parser.Parse(argv)
+	err = parser.Parse(normalizeTextArguments(argv))
 
 	switch {
 	case errors.Is(err, arg.ErrHelp):
@@ -68,6 +69,17 @@ func parseWithInput(argv []string, stdin stdinInput, version string, stdout io.W
 	}
 
 	return mapArgumentsWithInput(args, stdin)
+}
+
+func normalizeTextArguments(argv []string) []string {
+	normalized := append([]string(nil), argv...)
+	for index := 0; index+1 < len(normalized); index++ {
+		if (normalized[index] == "--text" || normalized[index] == "-t") && strings.HasPrefix(normalized[index+1], "-") {
+			normalized[index] = "--text=" + normalized[index+1]
+			normalized = append(normalized[:index+1], normalized[index+2:]...)
+		}
+	}
+	return normalized
 }
 
 func mapArguments(args arguments) (parseResult, error) {
