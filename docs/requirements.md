@@ -71,7 +71,6 @@ when it is downloaded.
 
 ```sh
 qshare --text "hello"
-qshare --text "-hello"
 printf 'hello\n' | qshare
 ```
 
