@@ -19,7 +19,6 @@ qshare DIRECTORY
 
 ```sh
 qshare --text TEXT
-qshare --text "-hello"
 printf 'text\n' | qshare
 ```
 
@@ -48,7 +47,7 @@ stdout. An explicitly selected missing or unknown backend is an error.
 | --- | --- |
 | `-e`, `--expire DURATION` | Set session lifetime; default `10m` |
 | `-r`, `--receive-dir DIR` | Set the upload destination in receive mode |
-| `-t`, `--text TEXT` | Share explicit UTF-8 text; values beginning with `-` are accepted |
+| `-t`, `--text TEXT` | Share explicit UTF-8 text |
 | `-c`, `--clipboard BACKEND` | Select receive-mode clipboard handling |
 | `-v`, `--version` | Print the qshare version and exit |
 | `--help` | Print help and exit |
@@ -116,7 +115,6 @@ qshare ./photos
 
 # Share text
 qshare --text "hello"
-qshare -t "-hello"
 printf 'hello\n' | qshare
 
 # Receive into the default or a selected directory
