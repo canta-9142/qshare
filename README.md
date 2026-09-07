@@ -118,8 +118,6 @@ binary against the release SHA-256 checksums, and never invokes `sudo`. Use
 `--version v0.7.0` to select a release or `--bin-dir /absolute/path` to change
 the destination.
 
-Packages for Debian, Raspbian, and Arch are available from the [Open Build Service](https://build.opensuse.org/package/show/home:canta-9142/qshare).
-
 You can also build Qshare from source:
 
 ```sh

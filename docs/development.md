@@ -86,11 +86,10 @@ linux/amd64
 linux/arm64
 ```
 
-Release binaries are self-contained and built with CGO disabled. Open Build
-Service uses `qshare.spec` for RPM builds and `qshare.dsc` with the `debian.*`
-files for Debian builds. `PKGBUILD` contains the Arch recipe, and `flake.nix`
-provides Nix packaging. Packaging should not become the only supported
-installation path; release binaries and source builds remain available.
+Release binaries are self-contained and built with CGO disabled. Fedora COPR
+uses `qshare.spec` for RPM builds, and `flake.nix` provides Nix packaging.
+Packaging should not become the only supported installation path; release
+binaries and source builds remain available.
 
 Distribution builds set the version displayed by `qshare --version` with the
 Go linker, for example:
