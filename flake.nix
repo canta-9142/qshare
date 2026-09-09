@@ -43,6 +43,7 @@
           subPackages = [ "cmd/qshare" ];
           env.CGO_ENABLED = "0";
           ldflags = [ "-X main.version=v${packageVersion}" ];
+          nativeCheckInputs = [ pkgs.git ];
 
           checkPhase = ''
             runHook preCheck
