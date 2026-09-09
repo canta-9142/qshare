@@ -32,7 +32,7 @@
           };
         });
         buildGoModule = pkgs.buildGoModule.override { inherit go; };
-        packageVersion = "0.6.2";
+        packageVersion = "0.6.3";
         qshare = buildGoModule {
           pname = "qshare";
           version = packageVersion;
@@ -43,6 +43,7 @@
           subPackages = [ "cmd/qshare" ];
           env.CGO_ENABLED = "0";
           ldflags = [ "-X main.version=v${packageVersion}" ];
+          nativeCheckInputs = [ pkgs.git ];
 
           checkPhase = ''
             runHook preCheck

@@ -120,8 +120,6 @@ sh install.sh
 ありません。バージョンを指定する場合は`--version v0.7.0`、インストール先を
 変更する場合は`--bin-dir /absolute/path`を使用します。
 
-[Open Build Service](https://build.opensuse.org/package/show/home:canta-9142/qshare)にて、Debian・Raspbian・Arch向けのパッケージが提供されております。
-
 ソースコードからビルドを行うこともできます。
 
 ```sh

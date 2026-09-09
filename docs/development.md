@@ -86,11 +86,10 @@ linux/amd64
 linux/arm64
 ```
 
-Release binaries are self-contained and built with CGO disabled. Open Build
-Service uses `qshare.spec` for RPM builds and `qshare.dsc` with the `debian.*`
-files for Debian builds. `PKGBUILD` contains the Arch recipe, and `flake.nix`
-provides Nix packaging. Packaging should not become the only supported
-installation path; release binaries and source builds remain available.
+Release binaries are self-contained and built with CGO disabled. Fedora COPR
+uses `qshare.spec` for RPM builds, and `flake.nix` provides Nix packaging.
+Packaging should not become the only supported installation path; release
+binaries and source builds remain available.
 
 Distribution builds set the version displayed by `qshare --version` with the
 Go linker, for example:
@@ -103,16 +102,41 @@ An ordinary unstamped development build reports `qshare devel`.
 
 ## Publishing a release
 
-Stable releases are published by `.github/workflows/release.yml`. Before
-tagging, update the package versions and release documentation in the same
-commit. Create and push a stable semantic-version tag:
+Stable releases are published by `.github/workflows/release.yml`. First commit
+the implementation and relevant release documentation, and make sure local tags
+are up to date with the remote. From a clean checkout on a branch, run:
 
 ```sh
-git tag -a v0.7.0 -m "qshare v0.7.0"
-git push origin v0.7.0
+./scripts/release.sh 0.7.0
 ```
 
+The script requires Bash, Go, Git, and standard Unix utilities; Nix is optional
+(`nix develop --command ./scripts/release.sh 0.7.0`). It accepts stable versions
+without a leading `v`, rejects existing local tags and uncommitted files, and
+uses the configured Git author for the RPM changelog. It updates `flake.nix`
+and `qshare.spec`, resets the RPM release to `1`, and prepends a changelog entry
+using the UTC date. It runs `go test ./...`, `go vet ./...`, and checks whitespace
+before creating a release commit and annotated tag. It does not push or contact
+the remote, and does not check whether the requested version is newer than
+previous releases.
+
+Review the commit and tag, then publish both (replace `main` if releasing from
+another branch):
+
+```sh
+git show HEAD
+git show v0.7.0
+git push --atomic origin main refs/tags/v0.7.0
+```
+
+If validation fails, package edits remain available for inspection, without a
+release commit or tag. Restore those edits deliberately before retrying the
+script, which requires a clean checkout. If committing or tagging fails, inspect
+the index, HEAD, and tag first; the script does not roll back Git operations.
+
 The workflow accepts tags such as `v0.7.0`; prerelease tags are not supported.
+Before building, it verifies that the versions in `flake.nix` and `qshare.spec`
+match the tag, including when a tag was created without the release script.
 It runs the tests, vet, and race detector before building self-contained Linux
 binaries for amd64 and arm64. It then publishes these assets to a GitHub
 Release:

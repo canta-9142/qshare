@@ -32,7 +32,7 @@ current behavior belongs in [requirements.md](requirements.md) and
 
 - Authorized directory browsing and streamed archives
 - Symlink, replacement, and traversal protections
-- Open Build Service recipes, Arch package recipe, and Nix flake
+- Nix flake packaging
 
 ### v0.6: Maintenance and UI
 

@@ -4,7 +4,7 @@
 %global debug_package %{nil}
 
 Name:           qshare
-Version:        0.6.2
+Version:        0.6.3
 Release:        1%{?dist}
 Summary:        Local file sharing with browser-capable devices
 
@@ -53,6 +53,9 @@ install -Dpm0755 qshare %{buildroot}%{_bindir}/qshare
 %{_bindir}/qshare
 
 %changelog
+* Wed Sep 09 2026 canta-9142 <work@floating-gate.com> - 0.6.3-1
+- Release version 0.6.3
+
 * Fri Aug 28 2026 Kanta Imai <work@floating-gate.com> - 0.6.2-1
 - Release version 0.6.2
 
