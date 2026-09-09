@@ -1,7 +1,5 @@
 # Requirements
 
-Version: 0.6.2
-
 ## Purpose
 
 qshare transfers files and UTF-8 text between a Linux PC and a smartphone or
