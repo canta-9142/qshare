@@ -14,6 +14,7 @@ Source0:        %{url}/archive/refs/tags/v%{version}/%{name}-%{version}.tar.gz
 
 ExclusiveArch:  x86_64 aarch64
 BuildRequires:  golang >= 1.24
+BuildRequires:  git
 
 Suggests:       wl-clipboard
 Suggests:       xclip
