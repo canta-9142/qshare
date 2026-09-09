@@ -29,6 +29,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Verify package versions match tag
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          nix_version=$(sed -n 's/^[[:space:]]*packageVersion = "\([^"]*\)";$/\1/p' flake.nix)
+          rpm_version=$(awk '/^Version:/ { print $2 }' qshare.spec)
+          if [[ "$nix_version" != "$version" || "$rpm_version" != "$version" ]]; then
+            printf 'Version mismatch: tag=%s, flake.nix=%s, qshare.spec=%s\n' "$GITHUB_REF_NAME" "$nix_version" "$rpm_version" >&2
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v7
         with:

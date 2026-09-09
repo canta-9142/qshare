@@ -135,6 +135,8 @@ script, which requires a clean checkout. If committing or tagging fails, inspect
 the index, HEAD, and tag first; the script does not roll back Git operations.
 
 The workflow accepts tags such as `v0.7.0`; prerelease tags are not supported.
+Before building, it verifies that the versions in `flake.nix` and `qshare.spec`
+match the tag, including when a tag was created without the release script.
 It runs the tests, vet, and race detector before building self-contained Linux
 binaries for amd64 and arm64. It then publishes these assets to a GitHub
 Release:
