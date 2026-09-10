@@ -29,7 +29,6 @@ type Server struct {
 	maxUploadRequestSize int64
 	server               *http.Server
 	mux                  *http.ServeMux
-	listener             net.Listener
 	done                 chan error
 	now                  func() time.Time
 }
@@ -101,8 +100,6 @@ func (s *Server) Start(bindAddr string) (net.Addr, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
-
-	s.listener = ln
 
 	go func() {
 		err := s.server.Serve(ln)
