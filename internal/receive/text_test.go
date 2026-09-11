@@ -130,7 +130,9 @@ func TestTextProcessorShutdownDrainsAcceptedSubmissions(t *testing.T) {
 
 	shutdownDone := make(chan struct{})
 	go func() {
-		processor.Shutdown()
+		if err := processor.Shutdown(context.Background()); err != nil {
+			t.Errorf("Shutdown() error = %v", err)
+		}
 		close(shutdownDone)
 	}()
 
@@ -172,7 +174,9 @@ func TestTextProcessorCloseCancelsShutdown(t *testing.T) {
 	<-started
 	shutdownDone := make(chan struct{})
 	go func() {
-		processor.Shutdown()
+		if err := processor.Shutdown(context.Background()); err != nil {
+			t.Errorf("Shutdown() error = %v", err)
+		}
 		close(shutdownDone)
 	}()
 
@@ -228,4 +232,44 @@ func waitForQueueLength(t *testing.T, processor *TextProcessor, want int) {
 		}
 		runtime.Gosched()
 	}
+}
+
+func TestTextProcessorShutdownCancellationWhileAcceptanceBlocked(t *testing.T) {
+	started := make(chan struct{})
+	processor := NewTextProcessor(textSinkFunc(func(ctx context.Context, _ share.Text) error {
+		close(started)
+		<-ctx.Done()
+		return context.Cause(ctx)
+	}), 1)
+	t.Cleanup(processor.Close)
+	submitDone := submitAsync(processor, textForTest(t, "value"))
+	<-started
+
+	// Model the read lock held by Submit while waiting for space in the full
+	// queue. It can only be released once processor cancellation unblocks it.
+	processor.acceptMu.RLock()
+	released := make(chan struct{})
+	go func() {
+		<-processor.ctx.Done()
+		processor.acceptMu.RUnlock()
+		close(released)
+	}()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cause := errors.New("interrupt text drain")
+	shutdownDone := make(chan error, 1)
+	go func() { shutdownDone <- processor.Shutdown(ctx) }()
+	cancel(cause)
+	select {
+	case err := <-shutdownDone:
+		if !errors.Is(err, cause) {
+			t.Fatalf("Shutdown() error = %v, want %v", err, cause)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown() did not cancel blocked acceptance")
+	}
+	<-released
+	if err := <-submitDone; !errors.Is(err, context.Canceled) && !errors.Is(err, ErrTextProcessorClosed) {
+		t.Fatalf("Submit() error = %v, want cancellation error", err)
+	}
+	processor.Close()
 }

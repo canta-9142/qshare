@@ -128,12 +128,7 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		textSink,
 		receive.TextQueueCapacity,
 	)
-	textProcessorStopped := false
-	defer func() {
-		if !textProcessorStopped {
-			textProcessor.Close()
-		}
-	}()
+	defer textProcessor.Close()
 
 	newServer := func(sess *session.Session) sessionServer {
 		return a.newReceiveServer(sess, store, textProcessor)
@@ -143,9 +138,7 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 		return err
 	}
 
-	err = shutdownTextProcessor(ctx, textProcessor)
-	textProcessorStopped = true
-	return err
+	return textProcessor.Shutdown(ctx)
 }
 
 func (a *Application) runPreparedSession(
@@ -374,21 +367,4 @@ func shutdownSessionServer(parent context.Context, srv shutdownServer, timeout t
 	}
 
 	return errors.Join(err, closeErr)
-}
-
-func shutdownTextProcessor(ctx context.Context, processor *receive.TextProcessor) error {
-	done := make(chan struct{})
-	go func() {
-		processor.Shutdown()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		processor.Close()
-		<-done
-		return context.Cause(ctx)
-	}
 }
