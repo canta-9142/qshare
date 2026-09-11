@@ -99,6 +99,17 @@ func TestArchiveSupportsConcurrentDownloads(t *testing.T) {
 	wg.Wait()
 }
 
+func TestCopyWithContextDetectsShortWrite(t *testing.T) {
+	err := copyWithContext(context.Background(), shortArchiveWriter{}, bytes.NewReader([]byte("content")))
+	if err != io.ErrShortWrite {
+		t.Fatalf("error = %v, want %v", err, io.ErrShortWrite)
+	}
+}
+
+type shortArchiveWriter struct{}
+
+func (shortArchiveWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
+
 type countArchiveReader struct{ calls int }
 
 func (r *countArchiveReader) Read([]byte) (int, error) { r.calls++; return 0, io.EOF }

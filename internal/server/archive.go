@@ -61,22 +61,18 @@ func uniqueArchiveName(name string, used map[string]struct{}) string {
 }
 
 func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
-	buffer := make([]byte, 32*1024)
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		n, readErr := src.Read(buffer)
-		if n > 0 {
-			if _, err := dst.Write(buffer[:n]); err != nil {
-				return err
-			}
-		}
-		if readErr != nil {
-			if readErr == io.EOF {
-				return nil
-			}
-			return readErr
-		}
+	_, err := io.Copy(dst, &contextReader{ctx: ctx, reader: src})
+	return err
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextReader) Read(buffer []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
 	}
+	return r.reader.Read(buffer)
 }
