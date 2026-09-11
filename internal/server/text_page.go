@@ -1,16 +1,7 @@
 package server
 
 import (
-	"embed"
-	"html/template"
 	"net/http"
-)
-
-//go:embed web/common.html web/text.html
-var textWebFiles embed.FS
-
-var textPageTemplate = template.Must(
-	template.ParseFS(textWebFiles, "web/common.html", "web/text.html"),
 )
 
 type textPageData struct {
@@ -32,5 +23,5 @@ func (s *Server) textPage(w http.ResponseWriter, r *http.Request) {
 
 	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
 
-	_ = textPageTemplate.ExecuteTemplate(w, "text.html", textPageData{Text: text.String()})
+	_ = pageTemplates.ExecuteTemplate(w, "text.html", textPageData{Text: text.String()})
 }

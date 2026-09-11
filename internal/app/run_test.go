@@ -788,12 +788,12 @@ func (s *fakeSessionServer) Start(bindAddr string) (net.Addr, error) {
 
 func (s *fakeSessionServer) Done() <-chan error { return s.done }
 
-func TestShutdownExpiredServer(t *testing.T) {
+func TestShutdownSessionServer(t *testing.T) {
 	t.Run("graceful drain", func(t *testing.T) {
 		server := &fakeShutdownServer{}
 
-		if err := shutdownExpiredServer(server, time.Second); err != nil {
-			t.Fatalf("shutdownExpiredServer() error = %v", err)
+		if err := shutdownSessionServer(context.Background(), server, time.Second); err != nil {
+			t.Fatalf("shutdownSessionServer() error = %v", err)
 		}
 		if server.closeCalls != 0 {
 			t.Fatalf("Close() calls = %d, want 0", server.closeCalls)
@@ -808,8 +808,8 @@ func TestShutdownExpiredServer(t *testing.T) {
 			},
 		}
 
-		if err := shutdownExpiredServer(server, 0); err != nil {
-			t.Fatalf("shutdownExpiredServer() error = %v", err)
+		if err := shutdownSessionServer(context.Background(), server, 0); err != nil {
+			t.Fatalf("shutdownSessionServer() error = %v", err)
 		}
 		if server.closeCalls != 1 {
 			t.Fatalf("Close() calls = %d, want 1", server.closeCalls)
@@ -826,9 +826,9 @@ func TestShutdownExpiredServer(t *testing.T) {
 			closeErr: closeErr,
 		}
 
-		err := shutdownExpiredServer(server, 0)
+		err := shutdownSessionServer(context.Background(), server, 0)
 		if !errors.Is(err, closeErr) {
-			t.Fatalf("shutdownExpiredServer() error = %v, want close error", err)
+			t.Fatalf("shutdownSessionServer() error = %v, want close error", err)
 		}
 		if server.closeCalls != 1 {
 			t.Fatalf("Close() calls = %d, want 1", server.closeCalls)
@@ -843,9 +843,9 @@ func TestShutdownExpiredServer(t *testing.T) {
 			},
 		}
 
-		err := shutdownExpiredServer(server, time.Second)
+		err := shutdownSessionServer(context.Background(), server, time.Second)
 		if !errors.Is(err, shutdownErr) {
-			t.Fatalf("shutdownExpiredServer() error = %v, want shutdown error", err)
+			t.Fatalf("shutdownSessionServer() error = %v, want shutdown error", err)
 		}
 		if server.closeCalls != 1 {
 			t.Fatalf("Close() calls = %d, want 1", server.closeCalls)

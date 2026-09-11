@@ -1,17 +1,10 @@
 package server
 
 import (
-	"embed"
-	"html/template"
 	"net/http"
 
 	"github.com/canta-9142/qshare/internal/share"
 )
-
-//go:embed web/common.html web/directory.html
-var directoryWebFiles embed.FS
-
-var directoryTemplate = template.Must(template.ParseFS(directoryWebFiles, "web/common.html", "web/directory.html"))
 
 type directoryPageData struct {
 	Name        string
@@ -79,5 +72,5 @@ func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *shar
 		}
 	}
 	data.IsEmpty = len(data.Directories) == 0 && len(data.Files) == 0
-	_ = directoryTemplate.ExecuteTemplate(w, "directory.html", data)
+	_ = pageTemplates.ExecuteTemplate(w, "directory.html", data)
 }

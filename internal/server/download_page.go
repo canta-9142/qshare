@@ -1,17 +1,8 @@
 package server
 
 import (
-	"embed"
 	"fmt"
-	"html/template"
 	"net/http"
-)
-
-//go:embed web/common.html web/download.html
-var webFiles embed.FS
-
-var downloadPage = template.Must(
-	template.ParseFS(webFiles, "web/common.html", "web/download.html"),
 )
 
 type downloadPageData struct {
@@ -48,7 +39,7 @@ func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	if err := downloadPage.ExecuteTemplate(w, "download.html", data); err != nil {
+	if err := pageTemplates.ExecuteTemplate(w, "download.html", data); err != nil {
 		return
 	}
 }

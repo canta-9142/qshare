@@ -1,19 +1,10 @@
 package server
 
 import (
-	"embed"
-	"html/template"
 	"net/http"
 
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/share"
-)
-
-//go:embed web/common.html web/upload.html
-var uploadWebFiles embed.FS
-
-var uploadPageTemplate = template.Must(
-	template.ParseFS(uploadWebFiles, "web/common.html", "web/upload.html"),
 )
 
 type uploadPageData struct {
@@ -46,7 +37,7 @@ func (s *Server) uploadPage(w http.ResponseWriter, r *http.Request) {
 		MaxTextSizeText:   formatFileSize(share.MaxTextSize),
 	}
 
-	if err := uploadPageTemplate.ExecuteTemplate(w, "upload.html", data); err != nil {
+	if err := pageTemplates.ExecuteTemplate(w, "upload.html", data); err != nil {
 		return
 	}
 }

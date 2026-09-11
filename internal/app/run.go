@@ -306,14 +306,14 @@ func (a *Application) runSession(ctx context.Context, sess *session.Session, srv
 	select {
 	case <-timer.C:
 		// Expiration
-		if err := shutdownExpiredServer(srv, expirationDrainTimeout); err != nil {
+		if err := shutdownSessionServer(context.Background(), srv, expirationDrainTimeout); err != nil {
 			return sessionEnded, fmt.Errorf("failed to shutdown server: %w", err)
 		}
 		return sessionEnded, nil
 
 	case <-a.shutdownRequested:
 		// Interactive normal shutdown
-		if err := shutdownRequestedServer(ctx, srv, expirationDrainTimeout); err != nil {
+		if err := shutdownSessionServer(ctx, srv, expirationDrainTimeout); err != nil {
 			return sessionShutdownRequested, fmt.Errorf("failed to shutdown server: %w", err)
 		}
 		return sessionShutdownRequested, nil
@@ -336,14 +336,6 @@ func (a *Application) runSession(ctx context.Context, sess *session.Session, srv
 		}
 		return sessionEnded, nil
 	}
-}
-
-func shutdownExpiredServer(srv shutdownServer, timeout time.Duration) error {
-	return shutdownSessionServer(context.Background(), srv, timeout)
-}
-
-func shutdownRequestedServer(ctx context.Context, srv shutdownServer, timeout time.Duration) error {
-	return shutdownSessionServer(ctx, srv, timeout)
 }
 
 func shutdownSessionServer(parent context.Context, srv shutdownServer, timeout time.Duration) error {
