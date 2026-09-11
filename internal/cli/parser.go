@@ -94,6 +94,17 @@ func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error
 		return parseResult{}, fmt.Errorf("too many files: got %d, maximum is %d", len(args.Files), share.MaxFiles)
 	}
 
+	if args.Port != nil && (*args.Port < 1 || *args.Port > 65535) {
+		return parseResult{}, errors.New("--port must be between 1 and 65535")
+	}
+	result, err := mapOperation(args, stdin)
+	if err == nil && args.Port != nil {
+		result.Request.Port = uint16(*args.Port)
+	}
+	return result, err
+}
+
+func mapOperation(args arguments, stdin stdinInput) (parseResult, error) {
 	switch {
 	case !stdin.terminal:
 		return mapPipedInput(args, stdin.reader)

@@ -15,6 +15,7 @@ cloud service, or device-management system.
 - Host: Linux on amd64 or arm64
 - Remote device: a modern browser on the same reachable LAN
 - Transport: local HTTP on a randomly selected TCP port from `50000`–`59999`
+  by default, or a port specified with `--port` (`1`–`65535`)
 - Internet access: not required
 
 qshare temporarily configures active firewalld installations and standard

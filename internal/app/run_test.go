@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -871,4 +872,36 @@ func (s *fakeShutdownServer) Shutdown(ctx context.Context) error {
 func (s *fakeShutdownServer) Close() error {
 	s.closeCalls++
 	return s.closeErr
+}
+
+func TestApplicationRequestedPort(t *testing.T) {
+	for _, startErr := range []error{nil, syscall.EADDRINUSE, syscall.EACCES} {
+		t.Run(fmt.Sprint(startErr), func(t *testing.T) {
+			application, fake, stderr, path := newTestApplication(t)
+			application.selectServerPort = func() (uint16, error) {
+				t.Fatal("random selection called for explicit port")
+				return 0, nil
+			}
+			fake.start = func(addr string) (net.Addr, error) { return testAddr(addr), startErr }
+			var firewallPort uint16
+			lease := &fakeFirewallLease{}
+			application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewallLease, error) {
+				firewallPort = rule.Port
+				return lease, nil
+			}
+			err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Millisecond, Port: 8080})
+			if len(fake.startAddrs) != 1 || fake.startAddrs[0] != "192.0.2.10:8080" {
+				t.Fatalf("Start addresses = %v", fake.startAddrs)
+			}
+			if startErr != nil {
+				if !errors.Is(err, startErr) || !strings.Contains(err.Error(), "8080") || firewallPort != 0 || stderr.Len() != 0 {
+					t.Fatalf("error=%v firewall port=%d stderr=%q", err, firewallPort, stderr)
+				}
+				return
+			}
+			if err != nil || firewallPort != 8080 || lease.closeCalls != 1 || !strings.Contains(stderr.String(), "http://192.0.2.10:8080/s/") {
+				t.Fatalf("error=%v firewall port=%d cleanup=%d stderr=%q", err, firewallPort, lease.closeCalls, stderr)
+			}
+		})
+	}
 }

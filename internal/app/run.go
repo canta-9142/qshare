@@ -59,7 +59,7 @@ func (a *Application) runSendDirectory(ctx context.Context, req Request) (runErr
 	if err != nil {
 		return err
 	}
-	_, err = a.runPreparedSession(ctx, sess, a.newDirectoryServer, fmt.Sprintf("Sharing directory  %s", directory.Root().Name()), req.Lifetime)
+	_, err = a.runPreparedSession(ctx, sess, a.newDirectoryServer, fmt.Sprintf("Sharing directory  %s", directory.Root().Name()), req.Lifetime, req.Port)
 	return err
 }
 
@@ -83,7 +83,7 @@ func (a *Application) runSendFile(ctx context.Context, req Request) (runErr erro
 		return err
 	}
 
-	_, err = a.runPreparedSession(ctx, sess, a.newSendServer, fmt.Sprintf("Sharing  %d file(s)", len(resources.Resources())), req.Lifetime)
+	_, err = a.runPreparedSession(ctx, sess, a.newSendServer, fmt.Sprintf("Sharing  %d file(s)", len(resources.Resources())), req.Lifetime, req.Port)
 	return err
 }
 
@@ -93,7 +93,7 @@ func (a *Application) runSendText(ctx context.Context, req Request) error {
 		return err
 	}
 
-	_, err = a.runPreparedSession(ctx, sess, a.newTextServer, "Sharing text", req.Lifetime)
+	_, err = a.runPreparedSession(ctx, sess, a.newTextServer, "Sharing text", req.Lifetime, req.Port)
 	return err
 }
 
@@ -138,7 +138,7 @@ func (a *Application) runReceive(ctx context.Context, req Request) error {
 	newServer := func(sess *session.Session) sessionServer {
 		return a.newReceiveServer(sess, store, textProcessor)
 	}
-	end, err := a.runPreparedSession(ctx, sess, newServer, "Receiving into "+req.ReceiveDir, req.Lifetime)
+	end, err := a.runPreparedSession(ctx, sess, newServer, "Receiving into "+req.ReceiveDir, req.Lifetime, req.Port)
 	if err != nil || end != sessionShutdownRequested {
 		return err
 	}
@@ -154,13 +154,14 @@ func (a *Application) runPreparedSession(
 	newServer func(*session.Session) sessionServer,
 	heading string,
 	lifetime time.Duration,
+	requestedPort uint16,
 ) (sessionEnd, error) {
 	endpoint, err := a.advertiseEndpoint()
 	if err != nil {
 		return sessionEnded, fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
 
-	srv, port, err := a.startLANServer(ctx, endpoint, sess, newServer(sess))
+	srv, port, err := a.startLANServer(ctx, endpoint, sess, newServer(sess), requestedPort)
 	if err != nil {
 		return sessionEnded, fmt.Errorf("failed to start server: %w", err)
 	}
@@ -203,30 +204,43 @@ func (a *Application) enableInteractiveShutdown(srv sessionServer) error {
 	return nil
 }
 
-// startLANServer binds an available random port and opens its temporary firewall rule.
+// startLANServer binds the requested port or an available random port and opens its temporary firewall rule.
 func (a *Application) startLANServer(
 	ctx context.Context,
 	endpoint network.Endpoint,
 	sess *session.Session,
 	srv sessionServer,
+	requestedPort uint16,
 ) (sessionServer, string, error) {
-	initialPort, err := a.selectServerPort()
-	if err != nil {
-		return nil, "", err
-	}
-	if initialPort < minimumServerPort || initialPort >= minimumServerPort+serverPortCount {
-		return nil, "", fmt.Errorf("selected server port %d is outside the configured range", initialPort)
+	initialPort := requestedPort
+	attempts := 1
+	var err error
+	if requestedPort == 0 {
+		initialPort, err = a.selectServerPort()
+		if err != nil {
+			return nil, "", err
+		}
+		if initialPort < minimumServerPort || initialPort >= minimumServerPort+serverPortCount {
+			return nil, "", fmt.Errorf("selected server port %d is outside the configured range", initialPort)
+		}
+		attempts = serverPortAttempts
 	}
 
 	var listenAddr net.Addr
 	// A random starting point keeps normal selection unpredictable. Advancing
 	// within the range guarantees that collision retries do not repeat a port.
-	for attempt := 0; attempt < serverPortAttempts; attempt++ {
-		port := minimumServerPort + (int(initialPort)-minimumServerPort+attempt)%serverPortCount
+	for attempt := 0; attempt < attempts; attempt++ {
+		port := int(initialPort)
+		if requestedPort == 0 {
+			port = minimumServerPort + (port-minimumServerPort+attempt)%serverPortCount
+		}
 		bindAddr := net.JoinHostPort(endpoint.Address.String(), strconv.FormatUint(uint64(port), 10))
 		listenAddr, err = srv.Start(bindAddr)
 		if err == nil {
 			break
+		}
+		if requestedPort != 0 {
+			return nil, "", fmt.Errorf("listen on port %d: %w", requestedPort, err)
 		}
 		if !errors.Is(err, syscall.EADDRINUSE) {
 			return nil, "", err

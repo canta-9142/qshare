@@ -34,6 +34,10 @@ Run the appropriate command, then scan the displayed QR code with your smartphon
 
 See the [CLI documentation](docs/cli.md) for details about each option.
 
+Use `--port 8080` (or `-p 8080`) to choose a TCP port, for example
+`qshare --port 8080 photo.jpg`. Without this option, a random port from
+`50000`–`59999` is selected.
+
 ### Transfer files from a PC to a smartphone
 
 ```sh
