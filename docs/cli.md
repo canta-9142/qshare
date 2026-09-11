@@ -45,6 +45,7 @@ stdout. An explicitly selected missing or unknown backend is an error.
 
 | Option | Meaning |
 | --- | --- |
+| `-p`, `--port PORT` | Set TCP port (`1`–`65535`); default: random `50000`–`59999` |
 | `-e`, `--expire DURATION` | Set session lifetime; default `10m` |
 | `-r`, `--receive-dir DIR` | Set the upload destination in receive mode |
 | `-t`, `--text TEXT` | Share explicit UTF-8 text |
@@ -62,6 +63,10 @@ The reserved future options `--direct` and `--once` are not implemented.
 
 qshare listens on the selected LAN IPv4 address at a random TCP port from
 `50000`–`59999`. If a candidate is already in use, it selects another one.
+`--port` (or `-p`) selects a fixed port in every mode, including piped text.
+Zero, out-of-range values, and non-integers are usage errors (exit code `2`).
+If the specified port cannot be bound, qshare exits with code `1` without
+trying another port.
 Supported firewalls receive a temporary rule for the selected port. Every mode
 prints a QR code and authenticated URL, then runs until the session expires,
 receives a termination signal, the user presses `q`, or it encounters a fatal
@@ -109,6 +114,9 @@ with `1`.
 ```sh
 # Share one or more files
 qshare photo.jpg notes.txt
+
+# Use a fixed port
+qshare --port 8080 photo.jpg
 
 # Share a directory
 qshare ./photos

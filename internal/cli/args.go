@@ -3,6 +3,7 @@ package cli
 import "time"
 
 type arguments struct {
+	Port       *int          `arg:"--port,-p" placeholder:"PORT" help:"TCP port (1-65535; default: random 50000-59999)"`
 	Expire     time.Duration `arg:"--expire,-e" default:"10m" help:"session lifetime"`
 	ReceiveDir string        `arg:"--receive-dir,-r" placeholder:"DIR" help:"directory for received files"`
 	Text       *string       `arg:"--text,-t" placeholder:"TEXT" help:"share UTF-8 text"`

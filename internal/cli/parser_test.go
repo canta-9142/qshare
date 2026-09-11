@@ -599,3 +599,44 @@ func TestReceiveDirFromHome(t *testing.T) {
 		t.Errorf("receiveDirFromHome() = %q, want %q", got, want)
 	}
 }
+
+func TestParsePortAcrossModes(t *testing.T) {
+	for _, argv := range [][]string{
+		{"--port", "8080"}, {"-p", "8080", "file"},
+		{"--port=8080", "--text", "hello"}, {"-p", "8080", t.TempDir()},
+		{"--port", "8080", "--clipboard", "auto"},
+	} {
+		result, err := parse(argv, io.Discard, io.Discard)
+		if err != nil || result.Exit || result.Request.Port != 8080 {
+			t.Fatalf("parse(%v) = %+v, %v", argv, result, err)
+		}
+	}
+	result, err := parseWithInput([]string{"-p", "65535"}, stdinInput{reader: strings.NewReader("hello")}, developmentVersion, io.Discard, io.Discard)
+	if err != nil || result.Exit || result.Request.Port != 65535 {
+		t.Fatalf("piped parse = %+v, %v", result, err)
+	}
+	result, err = parse([]string{"--port", "1"}, io.Discard, io.Discard)
+	if err != nil || result.Exit || result.Request.Port != 1 {
+		t.Fatalf("minimum port parse = %+v, %v", result, err)
+	}
+	result, err = parse(nil, io.Discard, io.Discard)
+	if err != nil || result.Request.Port != 0 {
+		t.Fatalf("default parse = %+v, %v", result, err)
+	}
+}
+
+func TestInvalidPortExitsWithUsageError(t *testing.T) {
+	for _, argv := range [][]string{
+		{"--port", "0"}, {"--port=-1"}, {"--port", "65536"},
+		{"--port", "999999999999999999999"}, {"--port", "http"},
+		{"--port", "1.5"}, {"--port="}, {"--port"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(argv, &stdout, &stderr); code != 2 {
+			t.Fatalf("Run(%v) = %d, want 2", argv, code)
+		}
+		if stdout.Len() != 0 || stderr.Len() == 0 {
+			t.Fatalf("Run(%v): stdout=%q stderr=%q", argv, &stdout, &stderr)
+		}
+	}
+}
