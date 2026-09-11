@@ -86,6 +86,31 @@ func TestDirectoryPageRejectsUnauthorizedAndUnknownNodes(t *testing.T) {
 	}
 }
 
+func TestDirectoryRootAuthorization(t *testing.T) {
+	srv, sess, _ := newDirectoryTestServer(t, t.TempDir())
+	wrong := sess.Token()
+	wrong[0] ^= 0xff
+	for _, tt := range []struct {
+		name   string
+		token  string
+		now    time.Time
+		status int
+	}{
+		{"wrong", wrong.String(), sess.ExpiresAt().Add(-time.Second), http.StatusNotFound},
+		{"before expiry", sess.Token().String(), sess.ExpiresAt().Add(-time.Nanosecond), http.StatusOK},
+		{"expiry boundary", sess.Token().String(), sess.ExpiresAt(), http.StatusNotFound},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv.now = func() time.Time { return tt.now }
+			recorder := httptest.NewRecorder()
+			srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/s/"+tt.token, nil))
+			if recorder.Code != tt.status {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.status)
+			}
+		})
+	}
+}
+
 func newDirectoryTestServer(t *testing.T, root string) (*Server, *session.Session, *share.Directory) {
 	t.Helper()
 	directory, err := share.OpenDirectory(root)

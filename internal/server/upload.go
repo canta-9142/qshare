@@ -14,13 +14,7 @@ import (
 const multipartOverhead int64 = 1 << 20
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if !s.session.Authorize(token, s.now()) {
-		http.NotFound(w, r)
+	if _, ok := s.authorizeRequest(w, r); !ok {
 		return
 	}
 

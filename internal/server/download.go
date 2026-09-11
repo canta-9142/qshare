@@ -1,8 +1,10 @@
 package server
 
 import (
+	"io"
 	"mime"
 	"net/http"
+	"time"
 
 	"github.com/canta-9142/qshare/internal/share"
 )
@@ -20,17 +22,13 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set(
-		"Content-Disposition",
-		mime.FormatMediaType(
-			"attachment",
-			map[string]string{
-				"filename": resource.Name(),
-			},
-		),
-	)
+	serveDownload(w, r, resource.Name(), resource.ModTime(), resource.Reader())
+}
+
+func serveDownload(w http.ResponseWriter, r *http.Request, name string, modTime time.Time, reader io.ReadSeeker) {
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	http.ServeContent(w, r, resource.Name(), resource.ModTime(), resource.Reader())
+	http.ServeContent(w, r, name, modTime, reader)
 }

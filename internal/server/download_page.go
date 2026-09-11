@@ -17,14 +17,8 @@ type downloadFileData struct {
 }
 
 func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	if !s.session.Authorize(token, s.now()) {
-		http.NotFound(w, r)
+	token, ok := s.authorizeRequest(w, r)
+	if !ok {
 		return
 	}
 

@@ -23,8 +23,11 @@ type directoryLinkData struct {
 type directoryFileData struct{ Name, Size, URL string }
 
 func (s *Server) directoryRoot(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) || s.session.Directory() == nil {
+	token, ok := s.authorizeRequest(w, r)
+	if !ok {
+		return
+	}
+	if s.session.Directory() == nil {
 		http.NotFound(w, r)
 		return
 	}

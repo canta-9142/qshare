@@ -132,6 +132,15 @@ func (s *Server) tokenFromRequest(r *http.Request) (session.Token, error) {
 	return session.ParseToken(raw)
 }
 
+func (s *Server) authorizeRequest(w http.ResponseWriter, r *http.Request) (session.Token, bool) {
+	token, err := s.tokenFromRequest(r)
+	if err != nil || !s.session.Authorize(token, s.now()) {
+		http.NotFound(w, r)
+		return session.Token{}, false
+	}
+	return token, true
+}
+
 func (s *Server) Done() <-chan error {
 	return s.done
 }

@@ -9,9 +9,7 @@ type textPageData struct {
 }
 
 func (s *Server) textPage(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) {
-		http.NotFound(w, r)
+	if _, ok := s.authorizeRequest(w, r); !ok {
 		return
 	}
 

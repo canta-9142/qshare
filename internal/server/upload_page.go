@@ -17,9 +17,8 @@ type uploadPageData struct {
 }
 
 func (s *Server) uploadPage(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) {
-		http.NotFound(w, r)
+	token, ok := s.authorizeRequest(w, r)
+	if !ok {
 		return
 	}
 

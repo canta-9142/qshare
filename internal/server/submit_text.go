@@ -9,9 +9,7 @@ import (
 )
 
 func (s *Server) submitText(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) {
-		http.NotFound(w, r)
+	if _, ok := s.authorizeRequest(w, r); !ok {
 		return
 	}
 	if s.textSubmitter == nil {
