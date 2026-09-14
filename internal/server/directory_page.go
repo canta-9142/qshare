@@ -50,6 +50,10 @@ func (s *Server) directoryPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
 	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'")
+	_ = pageTemplates.ExecuteTemplate(w, "directory.html", buildDirectoryPageData(token, node))
+}
+
+func buildDirectoryPageData(token string, node *share.Node) directoryPageData {
 	data := directoryPageData{Name: node.Name(), ArchiveURL: "/z/" + token}
 	var lineage []*share.Node
 	for current := node; current != nil; current = current.Parent() {
@@ -75,5 +79,5 @@ func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *shar
 		}
 	}
 	data.IsEmpty = len(data.Directories) == 0 && len(data.Files) == 0
-	_ = pageTemplates.ExecuteTemplate(w, "directory.html", data)
+	return data
 }

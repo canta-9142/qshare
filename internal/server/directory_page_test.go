@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,62 @@ import (
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
 )
+
+func TestBuildDirectoryPageData(t *testing.T) {
+	rootPath := filepath.Join(t.TempDir(), "shared-root")
+	if err := os.MkdirAll(filepath.Join(rootPath, "nested", "empty"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "nested", "file.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	directory, err := share.OpenDirectory(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = directory.Close() })
+	root := directory.Root()
+	nested := root.Children()[0]
+	empty, file := nested.Children()[0], nested.Children()[1]
+	const token = "test-token"
+	rootLink := directoryLinkData{Name: "shared-root", URL: "/s/" + token}
+	nestedLink := directoryLinkData{Name: "nested", URL: "/b/" + token + "/" + string(nested.ID())}
+	emptyLink := directoryLinkData{Name: "empty", URL: "/b/" + token + "/" + string(empty.ID())}
+	for _, tt := range []struct {
+		name string
+		node *share.Node
+		want directoryPageData
+	}{
+		{"root", root, directoryPageData{
+			Name: "shared-root", Breadcrumbs: []directoryLinkData{
+				{Name: "shared-root", URL: rootLink.URL, Current: true},
+			},
+			Directories: []directoryLinkData{nestedLink}, ArchiveURL: "/z/" + token,
+		}},
+		{"nested", nested, directoryPageData{
+			Name: "nested", Breadcrumbs: []directoryLinkData{
+				rootLink,
+				{Name: "nested", URL: nestedLink.URL, Current: true},
+			},
+			Directories: []directoryLinkData{emptyLink},
+			Files:       []directoryFileData{{Name: "file.txt", Size: "5 B", URL: "/d/" + token + "/" + string(file.ID())}},
+			ArchiveURL:  "/z/" + token,
+		}},
+		{"empty", empty, directoryPageData{
+			Name: "empty", Breadcrumbs: []directoryLinkData{
+				rootLink, nestedLink,
+				{Name: "empty", URL: emptyLink.URL, Current: true},
+			},
+			ArchiveURL: "/z/" + token, IsEmpty: true,
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := buildDirectoryPageData(token, tt.node); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("buildDirectoryPageData() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestDirectoryPageNavigationOrderingAndEscaping(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "shared-root")
