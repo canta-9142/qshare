@@ -2,11 +2,8 @@ package app
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
-	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"time"
 
@@ -54,7 +51,6 @@ type Application struct {
 	stderr                io.Writer
 	stdout                io.Writer
 	startShutdownListener func() (<-chan struct{}, error)
-	shutdownRequested     <-chan struct{}
 	advertiseEndpoint     func() (network.Endpoint, error)
 	selectServerPort      func() (uint16, error)
 	openFirewall          func(context.Context, firewall.Rule) (firewallLease, error)
@@ -77,15 +73,6 @@ type Dependencies struct {
 
 type textSubmitter interface {
 	Submit(context.Context, share.Text) error
-}
-
-// randomServerPort selects a uniformly distributed port from the configured range.
-func randomServerPort() (uint16, error) {
-	offset, err := rand.Int(rand.Reader, big.NewInt(serverPortCount))
-	if err != nil {
-		return 0, fmt.Errorf("select random server port: %w", err)
-	}
-	return uint16(minimumServerPort + offset.Int64()), nil
 }
 
 func New(deps Dependencies) *Application {

@@ -6,22 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/platform/clipboard"
-	"github.com/canta-9142/qshare/internal/platform/firewall"
-	"github.com/canta-9142/qshare/internal/platform/network"
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
-)
-
-type sessionEnd uint8
-
-const (
-	sessionEnded sessionEnd = iota
-	sessionShutdownRequested
 )
 
 func (a *Application) Run(ctx context.Context, req Request) error {
@@ -174,189 +163,10 @@ func (a *Application) runPreparedSession(
 	}
 
 	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL, lifetime)
-	if err := a.enableInteractiveShutdown(srv); err != nil {
+	shutdownRequested, err := a.enableInteractiveShutdown(srv)
+	if err != nil {
 		return sessionEnded, err
 	}
 
-	return a.runSession(ctx, sess, srv)
-}
-
-func (a *Application) enableInteractiveShutdown(srv sessionServer) error {
-	if a.startShutdownListener == nil {
-		return nil
-	}
-	shutdownRequested, err := a.startShutdownListener()
-	if err != nil {
-		return errors.Join(fmt.Errorf("configure quit key: %w", err), srv.Close())
-	}
-	a.shutdownRequested = shutdownRequested
-	if shutdownRequested != nil {
-		fmt.Fprint(a.stderr, "Press q to quit.\n\n")
-	}
-	return nil
-}
-
-// startLANServer binds an available random port and opens its temporary firewall rule.
-func (a *Application) startLANServer(
-	ctx context.Context,
-	endpoint network.Endpoint,
-	sess *session.Session,
-	srv sessionServer,
-) (sessionServer, string, error) {
-	initialPort, err := a.selectServerPort()
-	if err != nil {
-		return nil, "", err
-	}
-	if initialPort < minimumServerPort || initialPort >= minimumServerPort+serverPortCount {
-		return nil, "", fmt.Errorf("selected server port %d is outside the configured range", initialPort)
-	}
-
-	var listenAddr net.Addr
-	// A random starting point keeps normal selection unpredictable. Advancing
-	// within the range guarantees that collision retries do not repeat a port.
-	for attempt := 0; attempt < serverPortAttempts; attempt++ {
-		port := minimumServerPort + (int(initialPort)-minimumServerPort+attempt)%serverPortCount
-		bindAddr := net.JoinHostPort(endpoint.Address.String(), strconv.FormatUint(uint64(port), 10))
-		listenAddr, err = srv.Start(bindAddr)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, syscall.EADDRINUSE) {
-			return nil, "", err
-		}
-	}
-	if err != nil {
-		return nil, "", fmt.Errorf(
-			"failed to find an available port in %d-%d after %d attempts: %w",
-			minimumServerPort,
-			minimumServerPort+serverPortCount-1,
-			serverPortAttempts,
-			err,
-		)
-	}
-
-	_, portText, err := net.SplitHostPort(listenAddr.String())
-	if err != nil {
-		return nil, "", errors.Join(
-			fmt.Errorf("failed to parse listen address: %w", err),
-			srv.Close(),
-		)
-	}
-	port, err := strconv.ParseUint(portText, 10, 16)
-	if err != nil || port == 0 {
-		if err == nil {
-			err = errors.New("port must not be zero")
-		}
-		return nil, "", errors.Join(
-			fmt.Errorf("failed to parse listen port %q: %w", portText, err),
-			srv.Close(),
-		)
-	}
-
-	lease, err := a.openFirewall(ctx, firewall.Rule{
-		Interface:   endpoint.Interface,
-		Source:      endpoint.Prefix,
-		Destination: endpoint.Address,
-		Port:        uint16(port),
-		Timeout:     time.Until(sess.ExpiresAt()) + expirationDrainTimeout + firewallTimeoutSlack,
-	})
-	if err != nil {
-		return nil, "", errors.Join(
-			fmt.Errorf("failed to configure firewall: %w", err),
-			srv.Close(),
-		)
-	}
-
-	return &firewalledSessionServer{
-		sessionServer: srv,
-		lease:         lease,
-	}, portText, nil
-}
-
-// firewalledSessionServer couples HTTP shutdown with firewall cleanup.
-type firewalledSessionServer struct {
-	sessionServer
-	lease firewallLease
-}
-
-// Shutdown gracefully stops HTTP traffic and removes the firewall rule.
-func (s *firewalledSessionServer) Shutdown(ctx context.Context) error {
-	return errors.Join(s.sessionServer.Shutdown(ctx), s.closeFirewall())
-}
-
-// Close immediately stops HTTP traffic and removes the firewall rule.
-func (s *firewalledSessionServer) Close() error {
-	return errors.Join(s.sessionServer.Close(), s.closeFirewall())
-}
-
-// closeFirewall bounds cleanup independently from the session context.
-func (s *firewalledSessionServer) closeFirewall() error {
-	ctx, cancel := context.WithTimeout(context.Background(), firewallCleanupTimeout)
-	defer cancel()
-	if err := s.lease.Close(ctx); err != nil {
-		return fmt.Errorf("remove temporary firewall rule: %w", err)
-	}
-	return nil
-}
-
-func (a *Application) runSession(ctx context.Context, sess *session.Session, srv sessionServer) (sessionEnd, error) {
-	timer := time.NewTimer(time.Until(sess.ExpiresAt()))
-	defer timer.Stop()
-
-	select {
-	case <-timer.C:
-		// Expiration
-		if err := shutdownSessionServer(context.Background(), srv, expirationDrainTimeout); err != nil {
-			return sessionEnded, fmt.Errorf("failed to shutdown server: %w", err)
-		}
-		return sessionEnded, nil
-
-	case <-a.shutdownRequested:
-		// Interactive normal shutdown
-		if err := shutdownSessionServer(ctx, srv, expirationDrainTimeout); err != nil {
-			return sessionShutdownRequested, fmt.Errorf("failed to shutdown server: %w", err)
-		}
-		return sessionShutdownRequested, nil
-
-	case <-ctx.Done():
-		// SIGINT/SIGTERM
-		closeErr := srv.Close()
-		return sessionEnded, errors.Join(
-			context.Cause(ctx),
-			closeErr,
-		)
-
-	case err := <-srv.Done():
-		// Server error
-		if closeErr := srv.Close(); closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
-		if err != nil {
-			return sessionEnded, fmt.Errorf("HTTP server error: %w", err)
-		}
-		return sessionEnded, nil
-	}
-}
-
-func shutdownSessionServer(parent context.Context, srv shutdownServer, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-
-	err := srv.Shutdown(ctx)
-	if err == nil {
-		return nil
-	}
-
-	closeErr := srv.Close()
-	if cause := context.Cause(parent); cause != nil {
-		return errors.Join(cause, closeErr)
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		if closeErr != nil {
-			return fmt.Errorf("force close server after drain timeout: %w", closeErr)
-		}
-		return nil
-	}
-
-	return errors.Join(err, closeErr)
+	return a.runSession(ctx, sess, srv, shutdownRequested)
 }
