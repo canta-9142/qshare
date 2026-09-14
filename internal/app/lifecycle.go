@@ -6,67 +6,119 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 type sessionEnd uint8
 
 const (
-	sessionEnded sessionEnd = iota
+	sessionEnded sessionEnd = iota // Startup failure, cancellation, or server exit.
+	sessionExpired
 	sessionShutdownRequested
 )
 
-func (a *Application) enableInteractiveShutdown(srv sessionServer) (<-chan struct{}, error) {
-	if a.startShutdownListener == nil {
-		return nil, nil
-	}
-	shutdownRequested, err := a.startShutdownListener()
-	if err != nil {
-		return nil, errors.Join(fmt.Errorf("configure quit key: %w", err), srv.Close())
-	}
-	if shutdownRequested != nil {
-		fmt.Fprint(a.stderr, "Press q to quit.\n\n")
-	}
-	return shutdownRequested, nil
+// sessionRun owns the resources of one Run, including partial startup.
+// The HTTP adapter owns its TCP listener; the terminal adapter supplies restore.
+type sessionRun struct {
+	session       *session.Session
+	server        sessionServer
+	heading       string
+	lease         firewallLease
+	files         *share.Collection
+	directory     *share.Directory
+	textProcessor *receive.TextProcessor
+
+	restoreRequested chan struct{}
+	restoreResult    chan error
 }
 
-func (a *Application) runSession(ctx context.Context, sess *session.Session, srv sessionServer, shutdownRequested <-chan struct{}) (sessionEnd, error) {
-	timer := time.NewTimer(time.Until(sess.ExpiresAt()))
+func (r *sessionRun) watchTerminal(ctx context.Context, restore func() error) {
+	if restore == nil {
+		return
+	}
+	// One goroutine restores the terminal on cancellation or normal cleanup.
+	// Its buffered result lets restoration finish even while other cleanup waits.
+	r.restoreRequested = make(chan struct{})
+	r.restoreResult = make(chan error, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-r.restoreRequested:
+		}
+		r.restoreResult <- restore()
+	}()
+}
+
+func (r *sessionRun) wait(ctx context.Context, shutdownRequested <-chan struct{}) (sessionEnd, error) {
+	timer := time.NewTimer(time.Until(r.session.ExpiresAt()))
 	defer timer.Stop()
 
 	select {
 	case <-timer.C:
-		// Expiration
-		if err := shutdownSessionServer(context.Background(), srv, expirationDrainTimeout); err != nil {
-			return sessionEnded, fmt.Errorf("failed to shutdown server: %w", err)
-		}
-		return sessionEnded, nil
-
+		return sessionExpired, nil
 	case <-shutdownRequested:
-		// Interactive normal shutdown
-		if err := shutdownSessionServer(ctx, srv, expirationDrainTimeout); err != nil {
-			return sessionShutdownRequested, fmt.Errorf("failed to shutdown server: %w", err)
-		}
 		return sessionShutdownRequested, nil
-
 	case <-ctx.Done():
-		// SIGINT/SIGTERM
-		closeErr := srv.Close()
-		return sessionEnded, errors.Join(
-			context.Cause(ctx),
-			closeErr,
-		)
-
-	case err := <-srv.Done():
-		// Server error
-		if closeErr := srv.Close(); closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
+		return sessionEnded, context.Cause(ctx)
+	case err := <-r.server.Done():
 		if err != nil {
 			return sessionEnded, fmt.Errorf("HTTP server error: %w", err)
 		}
 		return sessionEnded, nil
 	}
+}
+
+// finish is the common exit path. Stop HTTP before removing its firewall rule,
+// then finish text processing, release shared files, and restore the terminal.
+// Only cancellation restores the terminal independently of that sequence.
+func (r *sessionRun) finish(ctx context.Context, end sessionEnd, runErr error) error {
+	if r.server != nil {
+		var err error
+		switch end {
+		case sessionExpired:
+			// An expiration drain is intentionally independent of signals.
+			err = shutdownSessionServer(context.Background(), r.server, expirationDrainTimeout)
+		case sessionShutdownRequested:
+			err = shutdownSessionServer(ctx, r.server, expirationDrainTimeout)
+		default:
+			err = r.server.Close()
+		}
+		if err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("failed to shutdown server: %w", err))
+		}
+	}
+	if r.lease != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), firewallCleanupTimeout)
+		err := r.lease.Close(cleanupCtx)
+		cancel()
+		if err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("remove temporary firewall rule: %w", err))
+		}
+	}
+	if r.textProcessor != nil {
+		// Preserve the q-only drain, and skip it if HTTP or firewall cleanup failed.
+		if end == sessionShutdownRequested && runErr == nil {
+			runErr = r.textProcessor.Shutdown(ctx)
+		}
+		r.textProcessor.Close()
+	}
+	if r.files != nil {
+		if err := r.files.Close(); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("failed to close resource: %w", err))
+		}
+	}
+	if r.directory != nil {
+		if err := r.directory.Close(); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("failed to close directory: %w", err))
+		}
+	}
+	if r.restoreRequested != nil {
+		close(r.restoreRequested)
+		runErr = errors.Join(runErr, <-r.restoreResult)
+	}
+	return runErr
 }
 
 func shutdownSessionServer(parent context.Context, srv shutdownServer, timeout time.Duration) error {

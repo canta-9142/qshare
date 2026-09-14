@@ -50,7 +50,7 @@ type firewallLease interface {
 type Application struct {
 	stderr                io.Writer
 	stdout                io.Writer
-	startShutdownListener func() (<-chan struct{}, error)
+	startShutdownListener func() (<-chan struct{}, func() error, error)
 	advertiseEndpoint     func() (network.Endpoint, error)
 	selectServerPort      func() (uint16, error)
 	openFirewall          func(context.Context, firewall.Rule) (firewallLease, error)
@@ -65,10 +65,13 @@ type Application struct {
 	renderQR              func(io.Writer, string) error
 }
 
+// Dependencies supplies output streams and optional terminal initialization.
+// StartShutdownListener returns the quit notification and terminal restoration.
+// On success, Run owns restoration; on failure, initialization cleans up itself.
 type Dependencies struct {
 	Stdout                io.Writer
 	Stderr                io.Writer
-	StartShutdownListener func() (<-chan struct{}, error)
+	StartShutdownListener func() (<-chan struct{}, func() error, error)
 }
 
 type textSubmitter interface {

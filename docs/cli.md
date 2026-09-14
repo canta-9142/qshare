@@ -76,6 +76,13 @@ Terminal signal generation remains enabled, so Ctrl+C retains normal SIGINT
 behavior instead of being treated as an input byte. Non-terminal stdin continues
 to select text send mode and does not enable the quit key.
 
+A termination signal restores the terminal without waiting for HTTP, firewall,
+or text cleanup. It interrupts a `q` drain; an expiration drain already in
+progress retains its 30-second limit and is not interrupted by the signal.
+Text processing drains only on successful `q` shutdown and is canceled on other
+exit paths. Finishing text cleanup still requires any active output write to
+return.
+
 ## Output streams
 
 ```text

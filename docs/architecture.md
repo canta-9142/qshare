@@ -35,7 +35,9 @@ filesystem authorization, or network-selection logic.
 ### `internal/cli`
 
 Parses arguments and stdin, maps them to an `app.Request`, routes stdout and
-stderr, handles termination signals, and maps errors to exit codes.
+stderr, handles termination signals, and maps errors to exit codes. Terminal initialization supplies a quit
+notification and restoration function to the application; CLI code implements
+terminal operations but does not decide when to restore the terminal.
 
 ### `internal/app`
 
@@ -47,7 +49,8 @@ Owns operation orchestration:
 4. create a session and HTTP server;
 5. render the authenticated URL as a QR code;
 6. wait for expiration, a signal, or a server failure;
-7. close resources and drain or stop the server.
+7. drain or stop HTTP, remove the firewall rule, finish text processing, release
+   shared resources, and restore the terminal.
 
 Application code depends on constructors and interfaces so security-sensitive
 logic and lifecycle behavior remain testable.
@@ -110,9 +113,25 @@ responses stream data rather than buffering complete content. A normal download
 does not mutate or complete the session, so retries, `HEAD`, and range requests
 remain independent while the token is valid.
 
-On expiration, the HTTP server drains for at most 30 seconds. Signal handling
-closes it immediately through the same application lifecycle. Reusable packages
-return errors instead of logging.
+Each `Application.Run` owns a concrete `sessionRun` containing its acquired
+resources. Startup errors and session termination both pass through the same
+cleanup in `internal/app/lifecycle.go`. The HTTP adapter manages its TCP
+listener; firewall cleanup is an explicit application step after HTTP stops,
+with a separate five-second timeout. Cleanup errors are joined without skipping
+later resource releases.
+
+On expiration, HTTP drains for at most 30 seconds using a context independent
+of signals, then text processing is canceled. On `q`, HTTP drains for at most
+30 seconds using the session context; if HTTP and firewall cleanup succeed,
+accepted text submissions are drained using that context. Signals interrupt
+this interactive drain. Other exit paths close HTTP and cancel text processing.
+
+One application goroutine restores the terminal after either cancellation or a
+normal cleanup notification. Signals therefore restore it even during an
+expiration drain or blocked text output. `Run` receives the restoration result
+before returning and includes any error in its result.
+The ownership decision is recorded in [ADR 0001](adr/0001-session-lifecycle.md).
+Reusable packages return errors instead of logging.
 
 ## Design constraints
 

@@ -81,11 +81,11 @@ func TestApplicationRunInteractiveShutdown(t *testing.T) {
 		qrRendered = true
 		return nil
 	}
-	application.startShutdownListener = func() (<-chan struct{}, error) {
+	application.startShutdownListener = func() (<-chan struct{}, func() error, error) {
 		if !qrRendered {
 			t.Fatal("shutdown listener started before QR rendering completed")
 		}
-		return shutdownRequested, nil
+		return shutdownRequested, nil, nil
 	}
 
 	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
@@ -104,8 +104,8 @@ func TestApplicationInteractiveShutdownCanBeInterrupted(t *testing.T) {
 	application, fake, _, path := newTestApplication(t)
 	shutdownRequested := make(chan struct{})
 	close(shutdownRequested)
-	application.startShutdownListener = func() (<-chan struct{}, error) {
-		return shutdownRequested, nil
+	application.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+		return shutdownRequested, nil, nil
 	}
 	shutdownStarted := make(chan struct{})
 	fake.shutdown = func(ctx context.Context) error {
@@ -147,16 +147,21 @@ func TestApplicationRunServerFailure(t *testing.T) {
 
 func TestApplicationRunClosesServerWhenQRRenderingFails(t *testing.T) {
 	application, fake, _, path := newTestApplication(t)
-	lease := &fakeFirewallLease{}
+	lease := &fakeFirewallLease{close: func(context.Context) error {
+		if fake.closeCalls != 1 {
+			t.Error("firewall removed before HTTP stopped")
+		}
+		return nil
+	}}
 	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
 		return lease, nil
 	}
 	renderErr := errors.New("render failed")
 	application.renderQR = func(io.Writer, string) error { return renderErr }
 	listenerStarted := false
-	application.startShutdownListener = func() (<-chan struct{}, error) {
+	application.startShutdownListener = func() (<-chan struct{}, func() error, error) {
 		listenerStarted = true
-		return nil, nil
+		return nil, nil, nil
 	}
 	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
 	if !errors.Is(err, renderErr) {
@@ -175,13 +180,18 @@ func TestApplicationRunClosesServerWhenQRRenderingFails(t *testing.T) {
 
 func TestApplicationClosesSessionWhenShutdownListenerFails(t *testing.T) {
 	application, fake, _, path := newTestApplication(t)
-	lease := &fakeFirewallLease{}
+	lease := &fakeFirewallLease{close: func(context.Context) error {
+		if fake.closeCalls != 1 {
+			t.Error("firewall removed before HTTP stopped")
+		}
+		return nil
+	}}
 	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
 		return lease, nil
 	}
 	want := errors.New("terminal failed")
-	application.startShutdownListener = func() (<-chan struct{}, error) {
-		return nil, want
+	application.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+		return nil, nil, want
 	}
 
 	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
@@ -198,7 +208,15 @@ func TestApplicationClosesSessionWhenShutdownListenerFails(t *testing.T) {
 
 func TestApplicationOpensFirewallBeforeRenderingAndClosesItWithServer(t *testing.T) {
 	application, _, _, path := newTestApplication(t)
-	lease := &fakeFirewallLease{}
+	lease := &fakeFirewallLease{close: func(ctx context.Context) error {
+		if ctx.Err() != nil {
+			t.Errorf("firewall cleanup context: %v", ctx.Err())
+		}
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > firewallCleanupTimeout {
+			t.Error("firewall cleanup has no bounded deadline")
+		}
+		return nil
+	}}
 	var gotRule firewall.Rule
 	opened := false
 	application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewallLease, error) {
@@ -274,6 +292,23 @@ func TestApplicationReportsFirewallCleanupFailure(t *testing.T) {
 }
 
 func TestApplicationRunReportsStartupFailures(t *testing.T) {
+	t.Run("session", func(t *testing.T) {
+		application, fake, _, path := newTestApplication(t)
+		if err := application.Run(context.Background(), Request{Paths: []string{path}}); err == nil {
+			t.Fatal("Run() succeeded with an invalid lifetime")
+		}
+		if fake.closeCalls != 0 {
+			t.Fatal("server closed before it was created")
+		}
+	})
+	t.Run("port", func(t *testing.T) {
+		application, _, _, path := newTestApplication(t)
+		want := errors.New("port selection failed")
+		application.selectServerPort = func() (uint16, error) { return 0, want }
+		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); !errors.Is(err, want) {
+			t.Fatalf("Run() error = %v", err)
+		}
+	})
 	t.Run("address", func(t *testing.T) {
 		application, _, _, path := newTestApplication(t)
 		want := errors.New("address failed")
@@ -292,16 +327,18 @@ func TestApplicationRunReportsStartupFailures(t *testing.T) {
 			t.Fatalf("Run() error = %v", err)
 		}
 	})
-	t.Run("invalid listen address", func(t *testing.T) {
-		application, fake, _, path := newTestApplication(t)
-		fake.addr = testAddr("invalid")
-		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); err == nil {
-			t.Fatal("Run() error = nil")
-		}
-		if fake.closeCalls != 1 {
-			t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
-		}
-	})
+	for _, addr := range []testAddr{"invalid", "192.0.2.10:0"} {
+		t.Run(string(addr), func(t *testing.T) {
+			application, fake, _, path := newTestApplication(t)
+			fake.addr = addr
+			if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); err == nil {
+				t.Fatal("Run() error = nil")
+			}
+			if fake.closeCalls != 1 {
+				t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
+			}
+		})
+	}
 }
 
 func TestApplicationRetriesRandomPortWhenCandidateIsInUse(t *testing.T) {
@@ -360,6 +397,25 @@ func newTestApplication(t *testing.T) (*Application, *fakeSessionServer, *bytes.
 	stderr := &bytes.Buffer{}
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
 	application := New(Dependencies{Stderr: stderr})
+	var file *share.File
+	application.openCollection = func(paths []string) (*share.Collection, error) {
+		files, err := share.OpenCollection(paths)
+		if err == nil {
+			file = files.Resources()[0].File()
+		}
+		return files, err
+	}
+	fake.close = func() error {
+		if file != nil {
+			assertFileOpen(t, file)
+		}
+		return fake.closeErr
+	}
+	t.Cleanup(func() {
+		if file != nil {
+			assertFileClosed(t, file)
+		}
+	})
 	configureTestNetworking(application)
 	application.selectServerPort = func() (uint16, error) { return 55544, nil }
 	application.newSendServer = func(*session.Session) sessionServer { return fake }
@@ -385,10 +441,14 @@ func configureTestNetworking(application *Application) *fakeFirewallLease {
 type fakeFirewallLease struct {
 	closeCalls int
 	closeErr   error
+	close      func(context.Context) error
 }
 
-func (l *fakeFirewallLease) Close(context.Context) error {
+func (l *fakeFirewallLease) Close(ctx context.Context) error {
 	l.closeCalls++
+	if l.close != nil {
+		return l.close(ctx)
+	}
 	return l.closeErr
 }
 
@@ -458,13 +518,14 @@ func TestApplicationRunReceiveMode(t *testing.T) {
 }
 
 func TestApplicationInteractiveShutdownDrainsReceivedText(t *testing.T) {
+	restored := make(chan struct{})
 	shutdownRequested := make(chan struct{})
 	close(shutdownRequested)
 	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
 	application := New(Dependencies{
 		Stderr: io.Discard,
-		StartShutdownListener: func() (<-chan struct{}, error) {
-			return shutdownRequested, nil
+		StartShutdownListener: func() (<-chan struct{}, func() error, error) {
+			return shutdownRequested, func() error { close(restored); return nil }, nil
 		},
 	})
 	configureTestNetworking(application)
@@ -514,6 +575,11 @@ func TestApplicationInteractiveShutdownDrainsReceivedText(t *testing.T) {
 		t.Fatalf("Run() returned before text drain: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
+	select {
+	case <-restored:
+		t.Fatal("terminal restored before accepted text drained")
+	default:
+	}
 	close(releaseSink)
 	if err := <-submitDone; err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -521,6 +587,7 @@ func TestApplicationInteractiveShutdownDrainsReceivedText(t *testing.T) {
 	if err := <-runDone; err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
+	awaitLifecycle(t, restored)
 	if received != "drained text" {
 		t.Fatalf("received text = %q, want drained text", received)
 	}
@@ -854,6 +921,7 @@ func TestShutdownSessionServer(t *testing.T) {
 }
 
 type fakeShutdownServer struct {
+	close         func() error
 	shutdown      func(context.Context) error
 	closeErr      error
 	closeCalls    int
@@ -870,5 +938,8 @@ func (s *fakeShutdownServer) Shutdown(ctx context.Context) error {
 
 func (s *fakeShutdownServer) Close() error {
 	s.closeCalls++
+	if s.close != nil {
+		return s.close()
+	}
 	return s.closeErr
 }

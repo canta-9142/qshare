@@ -6,167 +6,133 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"time"
 
 	"github.com/canta-9142/qshare/internal/platform/clipboard"
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 )
 
-func (a *Application) Run(ctx context.Context, req Request) error {
-	switch req.Operation {
-	case OperationSendFile:
-		return a.runSendFile(ctx, req)
-	case OperationSendDirectory:
-		return a.runSendDirectory(ctx, req)
+func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
+	var run sessionRun
+	end := sessionEnded
+	defer func() { runErr = run.finish(ctx, end, runErr) }()
 
-	case OperationSendText:
-		return a.runSendText(ctx, req)
-
-	case OperationReceive:
-		return a.runReceive(ctx, req)
-
-	default:
-		return fmt.Errorf("unsupported operation: %d", req.Operation)
-	}
-}
-
-func (a *Application) runSendDirectory(ctx context.Context, req Request) (runErr error) {
-	if len(req.Paths) != 1 {
-		return fmt.Errorf("directory send requires exactly one path")
-	}
-	directory, err := a.openDirectory(req.Paths[0])
-	if err != nil {
+	if err := a.prepareSession(req, &run); err != nil {
 		return err
 	}
-	defer func() {
-		if err := directory.Close(); err != nil {
-			runErr = errors.Join(runErr, fmt.Errorf("failed to close directory: %w", err))
-		}
-	}()
-	sess, err := session.NewSendDirectory(directory, req.Lifetime)
-	if err != nil {
-		return err
-	}
-	_, err = a.runPreparedSession(ctx, sess, a.newDirectoryServer, fmt.Sprintf("Sharing directory  %s", directory.Root().Name()), req.Lifetime)
-	return err
-}
-
-func (a *Application) runSendFile(ctx context.Context, req Request) (runErr error) {
-	resources, err := a.openCollection(req.Paths)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err := resources.Close(); err != nil {
-			runErr = errors.Join(
-				runErr,
-				fmt.Errorf("failed to close resource: %w", err),
-			)
-		}
-	}()
-
-	sess, err := session.NewSendFiles(resources, req.Lifetime)
-	if err != nil {
-		return err
-	}
-
-	_, err = a.runPreparedSession(ctx, sess, a.newSendServer, fmt.Sprintf("Sharing  %d file(s)", len(resources.Resources())), req.Lifetime)
-	return err
-}
-
-func (a *Application) runSendText(ctx context.Context, req Request) error {
-	sess, err := session.NewSendText(req.Text, req.Lifetime)
-	if err != nil {
-		return err
-	}
-
-	_, err = a.runPreparedSession(ctx, sess, a.newTextServer, "Sharing text", req.Lifetime)
-	return err
-}
-
-func (a *Application) runReceive(ctx context.Context, req Request) error {
-	var textSink receive.TextSink = receive.NewWriterTextSink(a.stdout)
-	if req.Clipboard != "" {
-		var err error
-		textSink, err = a.newClipboardSink(req.Clipboard)
-		if err != nil {
-			if req.Clipboard == "auto" && errors.Is(err, clipboard.ErrBackendNotFound) {
-				fmt.Fprintln(a.stderr, "Clipboard backend not found; received text will be written to stdout.")
-				textSink = receive.NewWriterTextSink(a.stdout)
-			} else if errors.Is(err, ErrInvalidRequest) {
-				return err
-			} else {
-				return fmt.Errorf("configure clipboard backend: %w", err)
-			}
-		}
-	}
-
-	store, err := a.openReceiveStore(req.ReceiveDir)
-	if err != nil {
-		return fmt.Errorf("open receive store: %w", err)
-	}
-
-	sess, err := session.NewReceive(req.Lifetime)
-	if err != nil {
-		return err
-	}
-
-	textProcessor := receive.NewTextProcessor(
-		textSink,
-		receive.TextQueueCapacity,
-	)
-	defer textProcessor.Close()
-
-	newServer := func(sess *session.Session) sessionServer {
-		return a.newReceiveServer(sess, store, textProcessor)
-	}
-	end, err := a.runPreparedSession(ctx, sess, newServer, "Receiving into "+req.ReceiveDir, req.Lifetime)
-	if err != nil || end != sessionShutdownRequested {
-		return err
-	}
-
-	return textProcessor.Shutdown(ctx)
-}
-
-func (a *Application) runPreparedSession(
-	ctx context.Context,
-	sess *session.Session,
-	newServer func(*session.Session) sessionServer,
-	heading string,
-	lifetime time.Duration,
-) (sessionEnd, error) {
 	endpoint, err := a.advertiseEndpoint()
 	if err != nil {
-		return sessionEnded, fmt.Errorf("failed to determine LAN advertise address: %w", err)
+		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
-
-	srv, port, err := a.startLANServer(ctx, endpoint, sess, newServer(sess))
+	port, err := a.startLANServer(ctx, endpoint, &run)
 	if err != nil {
-		return sessionEnded, fmt.Errorf("failed to start server: %w", err)
+		return fmt.Errorf("failed to start server: %w", err)
 	}
 
 	accessURLValue := url.URL{
 		Scheme: "http",
 		Host:   net.JoinHostPort(endpoint.Address.String(), port),
-		Path:   "/s/" + sess.Token().String(),
+		Path:   "/s/" + run.session.Token().String(),
 	}
 	accessURL := accessURLValue.String()
-
-	fmt.Fprintf(a.stderr, "\nQshare\n\n%s\n\n", heading)
+	fmt.Fprintf(a.stderr, "\nQshare\n\n%s\n\n", run.heading)
 	if err := a.renderQR(a.stderr, accessURL); err != nil {
-		return sessionEnded, errors.Join(
-			fmt.Errorf("failed to render QR code: %w", err),
-			srv.Close(),
-		)
+		return fmt.Errorf("failed to render QR code: %w", err)
 	}
+	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL, req.Lifetime)
 
-	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL, lifetime)
-	shutdownRequested, err := a.enableInteractiveShutdown(srv)
+	var shutdownRequested <-chan struct{}
+	if a.startShutdownListener != nil {
+		var restore func() error
+		shutdownRequested, restore, err = a.startShutdownListener()
+		if err != nil {
+			return fmt.Errorf("configure quit key: %w", err)
+		}
+		run.watchTerminal(ctx, restore)
+		if shutdownRequested != nil {
+			fmt.Fprint(a.stderr, "Press q to quit.\n\n")
+		}
+	}
+	end, runErr = run.wait(ctx, shutdownRequested)
+	return runErr
+}
+
+// prepareSession records each acquired resource before the next fallible step.
+// All modes return through Run's common cleanup, including preparation failures.
+func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
+	switch req.Operation {
+	case OperationSendFile:
+		run.files, err = a.openCollection(req.Paths)
+		if err != nil {
+			return err
+		}
+		run.session, err = session.NewSendFiles(run.files, req.Lifetime)
+		if err != nil {
+			return err
+		}
+		run.server = a.newSendServer(run.session)
+		run.heading = fmt.Sprintf("Sharing  %d file(s)", len(run.files.Resources()))
+
+	case OperationSendDirectory:
+		if len(req.Paths) != 1 {
+			return fmt.Errorf("directory send requires exactly one path")
+		}
+		run.directory, err = a.openDirectory(req.Paths[0])
+		if err != nil {
+			return err
+		}
+		run.session, err = session.NewSendDirectory(run.directory, req.Lifetime)
+		if err != nil {
+			return err
+		}
+		run.server = a.newDirectoryServer(run.session)
+		run.heading = fmt.Sprintf("Sharing directory  %s", run.directory.Root().Name())
+
+	case OperationSendText:
+		run.session, err = session.NewSendText(req.Text, req.Lifetime)
+		if err != nil {
+			return err
+		}
+		run.server = a.newTextServer(run.session)
+		run.heading = "Sharing text"
+
+	case OperationReceive:
+		sink, err := a.receiveTextSink(req.Clipboard)
+		if err != nil {
+			return err
+		}
+		store, err := a.openReceiveStore(req.ReceiveDir)
+		if err != nil {
+			return fmt.Errorf("open receive store: %w", err)
+		}
+		run.session, err = session.NewReceive(req.Lifetime)
+		if err != nil {
+			return err
+		}
+		run.textProcessor = receive.NewTextProcessor(sink, receive.TextQueueCapacity)
+		run.server = a.newReceiveServer(run.session, store, run.textProcessor)
+		run.heading = "Receiving into " + req.ReceiveDir
+
+	default:
+		return fmt.Errorf("unsupported operation: %d", req.Operation)
+	}
+	return nil
+}
+
+func (a *Application) receiveTextSink(backend string) (receive.TextSink, error) {
+	if backend == "" {
+		return receive.NewWriterTextSink(a.stdout), nil
+	}
+	sink, err := a.newClipboardSink(backend)
 	if err != nil {
-		return sessionEnded, err
+		if backend == "auto" && errors.Is(err, clipboard.ErrBackendNotFound) {
+			fmt.Fprintln(a.stderr, "Clipboard backend not found; received text will be written to stdout.")
+			return receive.NewWriterTextSink(a.stdout), nil
+		}
+		if errors.Is(err, ErrInvalidRequest) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("configure clipboard backend: %w", err)
 	}
-
-	return a.runSession(ctx, sess, srv, shutdownRequested)
+	return sink, nil
 }
