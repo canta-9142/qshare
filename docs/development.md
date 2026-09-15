@@ -12,6 +12,10 @@ git --version
 No environment manager or system-wide service is required. All development,
 testing, static analysis, and local builds use the standard Go toolchain.
 
+For Nix users, `nix develop` and the Nix package build use `go_latest` from the
+Nixpkgs revision pinned in `flake.lock`. Run `nix flake update nixpkgs` to update
+that revision and its toolchain.
+
 ## Common commands
 
 ```sh
