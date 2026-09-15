@@ -8,6 +8,7 @@
 [![Fedora Copr](https://img.shields.io/badge/fedora-copr-blue.svg?logo=fedora)](https://copr.fedorainfracloud.org/coprs/canta-9142/qshare)
 [![Nix Flake](https://img.shields.io/badge/nix-flake-5277C3?logo=nixos&logoColor=white)](flake.nix)
 [![CI](https://github.com/canta-9142/qshare/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/canta-9142/qshare/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/canta-9142/qshare/branch/main/graph/badge.svg)](https://codecov.io/gh/canta-9142/qshare)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/canta-9142/qshare.svg?style=social&label=Stars)](https://github.com/canta-9142/qshare/stargazers)
