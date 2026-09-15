@@ -46,14 +46,15 @@ Owns operation orchestration:
 1. open and validate resources;
 2. configure receive and platform adapters;
 3. determine the advertised LAN address;
-4. create a session and HTTP server;
+4. create the session handler, reserve a LAN listener, configure its firewall
+   rule, and start a standard HTTP server;
 5. render the authenticated URL as a QR code;
 6. wait for expiration, a signal, or a server failure;
 7. drain or stop HTTP, remove the firewall rule, finish text processing, release
    shared resources, and restore the terminal.
 
-Application code depends on constructors and interfaces so security-sensitive
-logic and lifecycle behavior remain testable.
+Tests replace listener acquisition and external platform operations. HTTP
+handlers are built directly, without mode-specific server factories.
 
 ### `internal/session`
 
@@ -91,6 +92,11 @@ Adapts sessions and resources to `net/http`. It parses requests, authenticates
 tokens, maps errors to HTTP responses, escapes browser output, and streams
 files and ZIP archives. It does not decide which local paths are shareable.
 
+Mode constructors return `http.Handler`. A small `NewHTTPServer` function applies
+the HTTP timeout and header limits and returns a standard `*http.Server`.
+This package does not bind listeners, launch serving goroutines, or own shutdown
+notifications; those belong to application orchestration.
+
 Browser templates are embedded from `internal/server/web`, keeping the binary
 self-contained.
 
@@ -115,10 +121,13 @@ remain independent while the token is valid.
 
 Each `Application.Run` owns a concrete `sessionRun` containing its acquired
 resources. Startup errors and session termination both pass through the same
-cleanup in `internal/app/lifecycle.go`. The HTTP adapter manages its TCP
-listener; firewall cleanup is an explicit application step after HTTP stops,
-with a separate five-second timeout. Cleanup errors are joined without skipping
-later resource releases.
+cleanup in `internal/app/lifecycle.go`. Application startup selects and reserves
+a LAN port, retaining the numeric port for the firewall rule and advertised URL.
+After firewall setup succeeds, it runs `http.Server.Serve` on that listener and
+records the result through a channel. Cleanup closes the listener even if serving
+never started, waits for serving to return, and removes the firewall rule with a
+separate five-second timeout. Cleanup errors are joined without skipping later
+resource releases.
 
 On expiration, HTTP drains for at most 30 seconds using a context independent
 of signals, then text processing is canceled. On `q`, HTTP drains for at most
@@ -130,7 +139,6 @@ One application goroutine restores the terminal after either cancellation or a
 normal cleanup notification. Signals therefore restore it even during an
 expiration drain or blocked text output. `Run` receives the restoration result
 before returning and includes any error in its result.
-The ownership decision is recorded in [ADR 0001](adr/0001-session-lifecycle.md).
 Reusable packages return errors instead of logging.
 
 ## Design constraints

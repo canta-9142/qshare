@@ -20,7 +20,7 @@ import (
 func TestArchivePreservesOrderContentAndMakesDuplicateNamesUnique(t *testing.T) {
 	server, sess := newMultiFileTestServer(t, []string{"same.txt", "same.txt", "same (1).txt"}, []string{"one", "two", "three"})
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d", response.Code)
 	}
@@ -54,14 +54,14 @@ func TestArchiveRejectsUnauthorizedRequests(t *testing.T) {
 	wrong[0] ^= 0xff
 	for _, token := range []string{"invalid", wrong.String()} {
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+token, nil))
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+token, nil))
 		if response.Code != http.StatusNotFound {
 			t.Fatalf("status = %d", response.Code)
 		}
 	}
 	server.now = sess.ExpiresAt
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("expired status = %d", response.Code)
 	}
@@ -87,7 +87,7 @@ func TestArchiveSupportsConcurrentDownloads(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			response := httptest.NewRecorder()
-			server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+			server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
 			if response.Code != http.StatusOK {
 				t.Errorf("status = %d", response.Code)
 			}
@@ -114,7 +114,7 @@ type countArchiveReader struct{ calls int }
 
 func (r *countArchiveReader) Read([]byte) (int, error) { r.calls++; return 0, io.EOF }
 
-func newMultiFileTestServer(t *testing.T, names, contents []string) (*Server, *session.Session) {
+func newMultiFileTestServer(t *testing.T, names, contents []string) (*handler, *session.Session) {
 	t.Helper()
 	root := t.TempDir()
 	paths := make([]string, len(names))
@@ -137,5 +137,5 @@ func newMultiFileTestServer(t *testing.T, names, contents []string) (*Server, *s
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewSendFile(sess), sess
+	return NewSendFile(sess).(*handler), sess
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/receive"
@@ -20,10 +22,12 @@ const (
 )
 
 // sessionRun owns the resources of one Run, including partial startup.
-// The HTTP adapter owns its TCP listener; the terminal adapter supplies restore.
+// The listener is owned even before Serve starts; the terminal supplies restore.
 type sessionRun struct {
 	session       *session.Session
-	server        sessionServer
+	server        *http.Server
+	listener      net.Listener
+	serverDone    chan error
 	heading       string
 	lease         firewallLease
 	files         *share.Collection
@@ -32,6 +36,18 @@ type sessionRun struct {
 
 	restoreRequested chan struct{}
 	restoreResult    chan error
+}
+
+func (r *sessionRun) serve() {
+	r.serverDone = make(chan error, 1)
+	go func() {
+		err := r.server.Serve(r.listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		r.serverDone <- err
+		close(r.serverDone)
+	}()
 }
 
 func (r *sessionRun) watchTerminal(ctx context.Context, restore func() error) {
@@ -62,7 +78,7 @@ func (r *sessionRun) wait(ctx context.Context, shutdownRequested <-chan struct{}
 		return sessionShutdownRequested, nil
 	case <-ctx.Done():
 		return sessionEnded, context.Cause(ctx)
-	case err := <-r.server.Done():
+	case err := <-r.serverDone:
 		if err != nil {
 			return sessionEnded, fmt.Errorf("HTTP server error: %w", err)
 		}
@@ -87,6 +103,18 @@ func (r *sessionRun) finish(ctx context.Context, end sessionEnd, runErr error) e
 		}
 		if err != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("failed to shutdown server: %w", err))
+		}
+	}
+	// Serve may not have started (for example, firewall setup failed), so the
+	// application must also close the listener. HTTP may already have closed it.
+	if r.listener != nil {
+		if err := r.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			runErr = errors.Join(runErr, fmt.Errorf("close listener: %w", err))
+		}
+	}
+	if r.serverDone != nil {
+		if err := <-r.serverDone; err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("HTTP server error: %w", err))
 		}
 	}
 	if r.lease != nil {
@@ -121,7 +149,7 @@ func (r *sessionRun) finish(ctx context.Context, end sessionEnd, runErr error) e
 	return runErr
 }
 
-func shutdownSessionServer(parent context.Context, srv shutdownServer, timeout time.Duration) error {
+func shutdownSessionServer(parent context.Context, srv *http.Server, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 

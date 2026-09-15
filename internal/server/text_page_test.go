@@ -16,7 +16,7 @@ func TestTextPageDisplaysEscapedTextAndCopyButton(t *testing.T) {
 	value := `<script>alert("x")</script> & text`
 	server, sess := newTextTestServer(t, value)
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(
+	server.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil),
 	)
@@ -52,7 +52,7 @@ func TestTextPageRejectsUnauthorizedAndExpiredRequests(t *testing.T) {
 
 	for _, path := range []string{"/s/not-a-token", "/s/" + other.String()} {
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want %d", path, response.Code, http.StatusNotFound)
 		}
@@ -63,7 +63,7 @@ func TestTextPageRejectsUnauthorizedAndExpiredRequests(t *testing.T) {
 
 	server.now = sess.ExpiresAt
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(
+	server.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil),
 	)
@@ -75,7 +75,7 @@ func TestTextPageRejectsUnauthorizedAndExpiredRequests(t *testing.T) {
 func TestTextPageRejectsUnsupportedMethod(t *testing.T) {
 	server, sess := newTextTestServer(t, "secret")
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(
+	server.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodPost, "/s/"+sess.Token().String(), nil),
 	)
@@ -84,7 +84,7 @@ func TestTextPageRejectsUnsupportedMethod(t *testing.T) {
 	}
 }
 
-func newTextTestServer(t *testing.T, value string) (*Server, *session.Session) {
+func newTextTestServer(t *testing.T, value string) (*handler, *session.Session) {
 	t.Helper()
 	text, err := share.NewText([]byte(value))
 	if err != nil {
@@ -94,5 +94,5 @@ func newTextTestServer(t *testing.T, value string) (*Server, *session.Session) {
 	if err != nil {
 		t.Fatalf("session.NewSendText() error = %v", err)
 	}
-	return NewSendText(sess), sess
+	return NewSendText(sess).(*handler), sess
 }

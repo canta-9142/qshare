@@ -87,7 +87,7 @@ func TestDirectoryPageNavigationOrderingAndEscaping(t *testing.T) {
 	srv, sess, directory := newDirectoryTestServer(t, root)
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil)
-	srv.mux.ServeHTTP(recorder, req)
+	srv.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d", recorder.Code)
 	}
@@ -110,7 +110,7 @@ func TestDirectoryPageNavigationOrderingAndEscaping(t *testing.T) {
 	child := directory.Root().Children()[0]
 	recorder = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/b/"+sess.Token().String()+"/"+string(child.ID()), nil)
-	srv.mux.ServeHTTP(recorder, req)
+	srv.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("child status = %d", recorder.Code)
 	}
@@ -119,7 +119,7 @@ func TestDirectoryPageNavigationOrderingAndEscaping(t *testing.T) {
 func TestDirectoryPageDescribesEmptyDirectory(t *testing.T) {
 	srv, sess, _ := newDirectoryTestServer(t, t.TempDir())
 	recorder := httptest.NewRecorder()
-	srv.mux.ServeHTTP(
+	srv.ServeHTTP(
 		recorder,
 		httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil),
 	)
@@ -136,7 +136,7 @@ func TestDirectoryPageRejectsUnauthorizedAndUnknownNodes(t *testing.T) {
 	srv, sess, _ := newDirectoryTestServer(t, t.TempDir())
 	for _, target := range []string{"/s/not-a-token", "/b/" + sess.Token().String() + "/unknown", "/b/" + sess.Token().String() + "/..%2fetc"} {
 		recorder := httptest.NewRecorder()
-		srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
+		srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
 		if recorder.Code != http.StatusNotFound {
 			t.Errorf("%s status = %d", target, recorder.Code)
 		}
@@ -160,7 +160,7 @@ func TestDirectoryRootAuthorization(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv.now = func() time.Time { return tt.now }
 			recorder := httptest.NewRecorder()
-			srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/s/"+tt.token, nil))
+			srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/s/"+tt.token, nil))
 			if recorder.Code != tt.status {
 				t.Fatalf("status = %d, want %d", recorder.Code, tt.status)
 			}
@@ -168,7 +168,7 @@ func TestDirectoryRootAuthorization(t *testing.T) {
 	}
 }
 
-func newDirectoryTestServer(t *testing.T, root string) (*Server, *session.Session, *share.Directory) {
+func newDirectoryTestServer(t *testing.T, root string) (*handler, *session.Session, *share.Directory) {
 	t.Helper()
 	directory, err := share.OpenDirectory(root)
 	if err != nil {
@@ -179,5 +179,5 @@ func newDirectoryTestServer(t *testing.T, root string) (*Server, *session.Sessio
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewSendDirectory(sess), sess, directory
+	return NewSendDirectory(sess).(*handler), sess, directory
 }

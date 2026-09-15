@@ -21,7 +21,7 @@ func TestDirectoryDownloadGETHEADRangeAndRetry(t *testing.T) {
 	target := "/d/" + sess.Token().String() + "/" + string(node.ID())
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		recorder := httptest.NewRecorder()
-		srv.mux.ServeHTTP(recorder, httptest.NewRequest(method, target, nil))
+		srv.ServeHTTP(recorder, httptest.NewRequest(method, target, nil))
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("%s status = %d", method, recorder.Code)
 		}
@@ -32,13 +32,13 @@ func TestDirectoryDownloadGETHEADRangeAndRetry(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, target, nil)
 	req.Header.Set("Range", "bytes=2-4")
 	recorder := httptest.NewRecorder()
-	srv.mux.ServeHTTP(recorder, req)
+	srv.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusPartialContent || recorder.Body.String() != "234" {
 		t.Fatalf("range = %d %q", recorder.Code, recorder.Body.String())
 	}
 	for i := 0; i < 2; i++ {
 		recorder = httptest.NewRecorder()
-		srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
+		srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
 		if recorder.Code != http.StatusOK {
 			t.Fatal("retry failed")
 		}
@@ -57,7 +57,7 @@ func TestDirectoryDownloadAllowsSameObjectContentChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
-	srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String()+"/"+string(node.ID()), nil))
+	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String()+"/"+string(node.ID()), nil))
 	if recorder.Code != http.StatusOK || recorder.Body.String() != "new-content" {
 		t.Fatalf("response = %d %q", recorder.Code, recorder.Body.String())
 	}
@@ -79,7 +79,7 @@ func TestDirectoryDownloadRejectsReplacementSymlinkAndUnknownID(t *testing.T) {
 	}
 	for _, id := range []string{string(node.ID()), "unknown"} {
 		recorder := httptest.NewRecorder()
-		srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String()+"/"+id, nil))
+		srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/d/"+sess.Token().String()+"/"+id, nil))
 		if recorder.Code != http.StatusNotFound || strings.Contains(recorder.Body.String(), "root:") {
 			t.Fatalf("id %q response = %d", id, recorder.Code)
 		}
@@ -100,7 +100,7 @@ func TestDirectoryDownloadConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			recorder := httptest.NewRecorder()
-			srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
+			srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
 			if recorder.Code != http.StatusOK || recorder.Body.String() != "content" {
 				t.Errorf("response = %d %q", recorder.Code, recorder.Body.String())
 			}

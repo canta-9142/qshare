@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 
 	"github.com/canta-9142/qshare/internal/platform/clipboard"
 	"github.com/canta-9142/qshare/internal/receive"
+	"github.com/canta-9142/qshare/internal/server"
 	"github.com/canta-9142/qshare/internal/session"
 )
 
@@ -31,7 +33,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 
 	accessURLValue := url.URL{
 		Scheme: "http",
-		Host:   net.JoinHostPort(endpoint.Address.String(), port),
+		Host:   net.JoinHostPort(endpoint.Address.String(), strconv.Itoa(int(port))),
 		Path:   "/s/" + run.session.Token().String(),
 	}
 	accessURL := accessURLValue.String()
@@ -70,7 +72,7 @@ func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 		if err != nil {
 			return err
 		}
-		run.server = a.newSendServer(run.session)
+		run.server = server.NewHTTPServer(server.NewSendFile(run.session))
 		run.heading = fmt.Sprintf("Sharing  %d file(s)", len(run.files.Resources()))
 
 	case OperationSendDirectory:
@@ -85,7 +87,7 @@ func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 		if err != nil {
 			return err
 		}
-		run.server = a.newDirectoryServer(run.session)
+		run.server = server.NewHTTPServer(server.NewSendDirectory(run.session))
 		run.heading = fmt.Sprintf("Sharing directory  %s", run.directory.Root().Name())
 
 	case OperationSendText:
@@ -93,7 +95,7 @@ func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 		if err != nil {
 			return err
 		}
-		run.server = a.newTextServer(run.session)
+		run.server = server.NewHTTPServer(server.NewSendText(run.session))
 		run.heading = "Sharing text"
 
 	case OperationReceive:
@@ -110,7 +112,7 @@ func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 			return err
 		}
 		run.textProcessor = receive.NewTextProcessor(sink, receive.TextQueueCapacity)
-		run.server = a.newReceiveServer(run.session, store, run.textProcessor)
+		run.server = server.NewHTTPServer(server.NewReceive(run.session, store, run.textProcessor))
 		run.heading = "Receiving into " + req.ReceiveDir
 
 	default:

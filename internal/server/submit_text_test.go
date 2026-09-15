@@ -25,7 +25,7 @@ func TestSubmitTextWaitsForSuccessfulProcessing(t *testing.T) {
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		server.server.Handler.ServeHTTP(
+		server.ServeHTTP(
 			response,
 			httptest.NewRequest(http.MethodPost, "/t/"+sess.Token().String(), strings.NewReader("hello, 世界")),
 		)
@@ -104,7 +104,7 @@ func TestSubmitTextRejectsUnauthorizedAndExpiredRequests(t *testing.T) {
 	other[0] ^= 0xff
 	for _, path := range []string{"/t/not-a-token", "/t/" + other.String()} {
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader("secret")))
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader("secret")))
 		if response.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want %d", path, response.Code, http.StatusNotFound)
 		}
@@ -129,7 +129,7 @@ func TestSubmitTextRejectsTokenFromAnotherSession(t *testing.T) {
 	_, secondSession := newTextReceiveTestServer(t, textSubmitterFunc(nil))
 
 	response := httptest.NewRecorder()
-	first.server.Handler.ServeHTTP(
+	first.ServeHTTP(
 		response,
 		httptest.NewRequest(
 			http.MethodPost,
@@ -166,7 +166,7 @@ func TestSubmitTextReportsFailureAndAcceptsLaterSubmission(t *testing.T) {
 func TestSubmitTextRejectsUnsupportedMethod(t *testing.T) {
 	server, sess := newTextReceiveTestServer(t, textSubmitterFunc(nil))
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(
+	server.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodGet, "/t/"+sess.Token().String(), nil),
 	)
@@ -181,18 +181,18 @@ func (function textSubmitterFunc) Submit(ctx context.Context, text share.Text) e
 	return function(ctx, text)
 }
 
-func newTextReceiveTestServer(t *testing.T, submitter textSubmitter) (*Server, *session.Session) {
+func newTextReceiveTestServer(t *testing.T, submitter textSubmitter) (*handler, *session.Session) {
 	t.Helper()
 	sess, err := session.NewReceive(time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewReceive(sess, uploadStoreFunc(nil), submitter), sess
+	return NewReceive(sess, uploadStoreFunc(nil), submitter).(*handler), sess
 }
 
-func submitTextRequest(server *Server, sess *session.Session, body string) *httptest.ResponseRecorder {
+func submitTextRequest(server *handler, sess *session.Session, body string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(
+	server.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodPost, "/t/"+sess.Token().String(), strings.NewReader(body)),
 	)

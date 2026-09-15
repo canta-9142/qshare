@@ -9,7 +9,7 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func (s *Server) download(w http.ResponseWriter, r *http.Request) {
+func (s *handler) download(w http.ResponseWriter, r *http.Request) {
 	token, err := s.tokenFromRequest(r)
 	if err != nil {
 		http.NotFound(w, r)

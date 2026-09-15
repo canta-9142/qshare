@@ -8,7 +8,7 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func (s *Server) submitText(w http.ResponseWriter, r *http.Request) {
+func (s *handler) submitText(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorizeRequest(w, r); !ok {
 		return
 	}

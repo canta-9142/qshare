@@ -16,7 +16,7 @@ type uploadPageData struct {
 	MaxTextSizeText   string
 }
 
-func (s *Server) uploadPage(w http.ResponseWriter, r *http.Request) {
+func (s *handler) uploadPage(w http.ResponseWriter, r *http.Request) {
 	token, ok := s.authorizeRequest(w, r)
 	if !ok {
 		return

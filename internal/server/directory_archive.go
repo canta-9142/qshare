@@ -11,7 +11,7 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func (s *Server) directoryArchive(w http.ResponseWriter, r *http.Request) {
+func (s *handler) directoryArchive(w http.ResponseWriter, r *http.Request) {
 	token, err := s.tokenFromRequest(r)
 	if err != nil || !s.session.Authorize(token, s.now()) || s.session.Directory() == nil {
 		http.NotFound(w, r)
@@ -30,7 +30,7 @@ func (s *Server) directoryArchive(w http.ResponseWriter, r *http.Request) {
 	_ = zw.Close()
 }
 
-func (s *Server) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node *share.Node, archivePath string) error {
+func (s *handler) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node *share.Node, archivePath string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

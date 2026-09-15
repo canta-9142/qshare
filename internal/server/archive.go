@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
+func (s *handler) archive(w http.ResponseWriter, r *http.Request) {
 	token, err := s.tokenFromRequest(r)
 	if err != nil || !s.session.Authorize(token, s.now()) {
 		http.NotFound(w, r)

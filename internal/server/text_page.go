@@ -8,7 +8,7 @@ type textPageData struct {
 	Text string
 }
 
-func (s *Server) textPage(w http.ResponseWriter, r *http.Request) {
+func (s *handler) textPage(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorizeRequest(w, r); !ok {
 		return
 	}

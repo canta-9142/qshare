@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +18,7 @@ func TestDownload(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, downloadURL(sess), nil)
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	result := response.Result()
 	defer result.Body.Close()
@@ -49,7 +48,7 @@ func TestDownloadCanBeRetried(t *testing.T) {
 	path := downloadURL(sess)
 	for attempt := 0; attempt < 2; attempt++ {
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK || response.Body.String() != "download content" {
 			t.Fatalf("attempt %d: status=%d body=%q", attempt+1, response.Code, response.Body.String())
 		}
@@ -63,7 +62,7 @@ func TestDownloadHeadAndRangeRequests(t *testing.T) {
 	t.Run("HEAD", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodHead, url, nil)
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, request)
+		server.ServeHTTP(response, request)
 
 		result := response.Result()
 		defer result.Body.Close()
@@ -86,7 +85,7 @@ func TestDownloadHeadAndRangeRequests(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, url, nil)
 		request.Header.Set("Range", "bytes=2-4")
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, request)
+		server.ServeHTTP(response, request)
 
 		result := response.Result()
 		defer result.Body.Close()
@@ -106,7 +105,7 @@ func TestDownloadHeadAndRangeRequests(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, url, nil)
 		request.Header.Set("Range", "bytes=99-100")
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, request)
+		server.ServeHTTP(response, request)
 		if response.Code != http.StatusRequestedRangeNotSatisfiable {
 			t.Fatalf("status = %d, want %d", response.Code, http.StatusRequestedRangeNotSatisfiable)
 		}
@@ -116,52 +115,18 @@ func TestDownloadHeadAndRangeRequests(t *testing.T) {
 func TestDownloadRejectsUnsupportedMethod(t *testing.T) {
 	server, sess := newTestServer(t, "secret")
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, downloadURL(sess), nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, downloadURL(sess), nil))
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
 	}
 }
 
-func TestServerStartAndShutdown(t *testing.T) {
-	server, sess := newTestServer(t, "over tcp")
-	addr, err := server.Start("127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-
-	response, err := http.Get("http://" + addr.String() + downloadURL(sess))
-	if err != nil {
-		t.Fatalf("GET error = %v", err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil || response.StatusCode != http.StatusOK || string(body) != "over tcp" {
-		t.Fatalf("response status=%d body=%q err=%v", response.StatusCode, body, err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		t.Fatalf("Shutdown() error = %v", err)
-	}
-	if err := <-server.Done(); err != nil {
-		t.Fatalf("Done() error = %v", err)
-	}
-	if _, err := http.Get("http://" + addr.String() + downloadURL(sess)); err == nil {
-		t.Fatal("GET after Shutdown() error = nil")
-	}
-}
-
-func TestServerClose(t *testing.T) {
-	server, _ := newTestServer(t, "content")
-	if _, err := server.Start("127.0.0.1:0"); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	if err := server.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	if err := <-server.Done(); err != nil {
-		t.Fatalf("Done() error = %v", err)
+func TestHTTPServerLimits(t *testing.T) {
+	h, _ := newTestServer(t, "content")
+	srv := NewHTTPServer(h)
+	if srv.Handler != h || srv.ReadHeaderTimeout != 5*time.Second ||
+		srv.IdleTimeout != 30*time.Second || srv.MaxHeaderBytes != 1<<20 {
+		t.Fatalf("unexpected HTTP server configuration: %+v", srv)
 	}
 }
 
@@ -184,7 +149,7 @@ func TestDownloadRejectsUnauthorizedRequests(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			response := httptest.NewRecorder()
-			server.server.Handler.ServeHTTP(response, request)
+			server.ServeHTTP(response, request)
 
 			if response.Code != http.StatusNotFound {
 				t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
@@ -201,7 +166,7 @@ func TestDownloadRejectsAnotherSessionsResourceID(t *testing.T) {
 	_, other := newNamedTestServer(t, "other.txt", "second")
 	path := "/d/" + sess.Token().String() + "/" + string(other.Resources().Resources()[0].ID())
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", response.Code)
 	}
@@ -213,7 +178,7 @@ func TestDownloadRejectsRequestAtExpirationBoundary(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, downloadURL(sess), nil)
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
@@ -231,7 +196,7 @@ func TestDownloadDoesNotServeTraversalPaths(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, path, nil)
 			response := httptest.NewRecorder()
-			server.server.Handler.ServeHTTP(response, request)
+			server.ServeHTTP(response, request)
 
 			if response.Code == http.StatusOK || response.Code == http.StatusPartialContent {
 				t.Fatalf("status = %d, want request rejected", response.Code)
@@ -243,11 +208,11 @@ func TestDownloadDoesNotServeTraversalPaths(t *testing.T) {
 	}
 }
 
-func newTestServer(t *testing.T, content string) (*Server, *session.Session) {
+func newTestServer(t *testing.T, content string) (*handler, *session.Session) {
 	return newNamedTestServer(t, "shared.txt", content)
 }
 
-func newNamedTestServer(t *testing.T, name, content string) (*Server, *session.Session) {
+func newNamedTestServer(t *testing.T, name, content string) (*handler, *session.Session) {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), name)
@@ -263,7 +228,7 @@ func newNamedTestServer(t *testing.T, name, content string) (*Server, *session.S
 	if err != nil {
 		t.Fatalf("session.NewSendFiles() error = %v", err)
 	}
-	return NewSendFile(sess), sess
+	return NewSendFile(sess).(*handler), sess
 }
 
 func downloadURL(sess *session.Session) string {

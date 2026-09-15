@@ -2,10 +2,7 @@ package server
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"time"
 
@@ -22,19 +19,17 @@ type textSubmitter interface {
 	Submit(context.Context, share.Text) error
 }
 
-type Server struct {
+type handler struct {
 	session              *session.Session
 	uploadStore          uploadStore
 	textSubmitter        textSubmitter
 	maxUploadRequestSize int64
-	server               *http.Server
 	mux                  *http.ServeMux
-	done                 chan error
 	now                  func() time.Time
 }
 
-func NewSendFile(sess *session.Session) *Server {
-	server := newServer(sess)
+func NewSendFile(sess *session.Session) http.Handler {
+	server := newHandler(sess)
 
 	server.mux.HandleFunc("GET /s/{token}", server.downloadPage)
 	server.mux.HandleFunc("GET /d/{token}/{resource}", server.download)
@@ -44,8 +39,8 @@ func NewSendFile(sess *session.Session) *Server {
 	return server
 }
 
-func NewSendDirectory(sess *session.Session) *Server {
-	server := newServer(sess)
+func NewSendDirectory(sess *session.Session) http.Handler {
+	server := newHandler(sess)
 	server.mux.HandleFunc("GET /s/{token}", server.directoryRoot)
 	server.mux.HandleFunc("GET /b/{token}/{resource}", server.directoryPage)
 	server.mux.HandleFunc("GET /d/{token}/{resource}", server.directoryDownload)
@@ -54,16 +49,16 @@ func NewSendDirectory(sess *session.Session) *Server {
 	return server
 }
 
-func NewSendText(sess *session.Session) *Server {
-	server := newServer(sess)
+func NewSendText(sess *session.Session) http.Handler {
+	server := newHandler(sess)
 
 	server.mux.HandleFunc("GET /s/{token}", server.textPage)
 
 	return server
 }
 
-func NewReceive(sess *session.Session, store uploadStore, submitter textSubmitter) *Server {
-	server := newServer(sess)
+func NewReceive(sess *session.Session, store uploadStore, submitter textSubmitter) http.Handler {
+	server := newHandler(sess)
 
 	server.mux.HandleFunc("GET /s/{token}", server.uploadPage)
 	server.mux.HandleFunc("POST /u/{token}", server.upload)
@@ -75,72 +70,38 @@ func NewReceive(sess *session.Session, store uploadStore, submitter textSubmitte
 	return server
 }
 
-func newServer(sess *session.Session) *Server {
-	mux := http.NewServeMux()
-
-	server := &Server{
+func newHandler(sess *session.Session) *handler {
+	return &handler{
 		session: sess,
-		mux:     mux,
-		done:    make(chan error, 1),
+		mux:     http.NewServeMux(),
 		now:     time.Now,
 	}
+}
 
-	server.server = &http.Server{
-		Handler:           mux,
+// NewHTTPServer applies the transport limits without binding or starting it.
+func NewHTTPServer(h http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           h,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
-
-	return server
 }
 
-func (s *Server) Start(bindAddr string) (net.Addr, error) {
-	ln, err := net.Listen("tcp", bindAddr)
-	if err != nil {
-		return nil, fmt.Errorf("listen: %w", err)
-	}
-
-	go func() {
-		err := s.server.Serve(ln)
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
-		}
-		s.done <- err
-		close(s.done)
-	}()
-
-	return ln.Addr(), nil
+func (s *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mux.ServeHTTP(w, r)
 }
 
-func (s *Server) Shutdown(ctx context.Context) error {
-	if err := s.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown HTTP server: %w", err)
-	}
-	return nil
-}
-
-func (s *Server) Close() error {
-	if err := s.server.Close(); err != nil {
-		return fmt.Errorf("close HTTP server: %w", err)
-	}
-	return nil
-}
-
-func (s *Server) tokenFromRequest(r *http.Request) (session.Token, error) {
+func (s *handler) tokenFromRequest(r *http.Request) (session.Token, error) {
 	raw := r.PathValue("token")
 	return session.ParseToken(raw)
 }
 
-func (s *Server) authorizeRequest(w http.ResponseWriter, r *http.Request) (session.Token, bool) {
+func (s *handler) authorizeRequest(w http.ResponseWriter, r *http.Request) (session.Token, bool) {
 	token, err := s.tokenFromRequest(r)
 	if err != nil || !s.session.Authorize(token, s.now()) {
 		http.NotFound(w, r)
 		return session.Token{}, false
 	}
 	return token, true
-}
-
-func (s *Server) Done() <-chan error {
-	return s.done
 }

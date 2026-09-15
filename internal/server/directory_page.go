@@ -22,7 +22,7 @@ type directoryLinkData struct {
 }
 type directoryFileData struct{ Name, Size, URL string }
 
-func (s *Server) directoryRoot(w http.ResponseWriter, r *http.Request) {
+func (s *handler) directoryRoot(w http.ResponseWriter, r *http.Request) {
 	token, ok := s.authorizeRequest(w, r)
 	if !ok {
 		return
@@ -34,7 +34,7 @@ func (s *Server) directoryRoot(w http.ResponseWriter, r *http.Request) {
 	s.renderDirectory(w, token.String(), s.session.Directory().Root())
 }
 
-func (s *Server) directoryPage(w http.ResponseWriter, r *http.Request) {
+func (s *handler) directoryPage(w http.ResponseWriter, r *http.Request) {
 	token, err := s.tokenFromRequest(r)
 	if err != nil {
 		http.NotFound(w, r)
@@ -48,7 +48,7 @@ func (s *Server) directoryPage(w http.ResponseWriter, r *http.Request) {
 	s.renderDirectory(w, token.String(), node)
 }
 
-func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
+func (s *handler) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
 	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'")
 	_ = pageTemplates.ExecuteTemplate(w, "directory.html", buildDirectoryPageData(token, node))
 }

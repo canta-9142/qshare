@@ -13,7 +13,7 @@ import (
 
 const multipartOverhead int64 = 1 << 20
 
-func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
+func (s *handler) upload(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorizeRequest(w, r); !ok {
 		return
 	}

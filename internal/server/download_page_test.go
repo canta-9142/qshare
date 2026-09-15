@@ -16,7 +16,7 @@ func TestDownloadPage(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	response := httptest.NewRecorder()
 
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	result := response.Result()
 	defer result.Body.Close()
@@ -59,14 +59,14 @@ func TestDownloadPageRejectsUnauthorizedRequests(t *testing.T) {
 	other[0] ^= 0xff
 	for _, path := range []string{"/s/not-a-token", "/s/" + other.String()} {
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want 404", path, response.Code)
 		}
 	}
 	server.now = sess.ExpiresAt
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
 	if response.Code != http.StatusNotFound {
 		t.Errorf("expired page status = %d, want 404", response.Code)
 	}
@@ -76,7 +76,7 @@ func TestDownloadPageEscapesFileName(t *testing.T) {
 	name := `<script>alert("x").txt`
 	server, sess := newNamedTestServer(t, name, "content")
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
 	body := response.Body.String()
 	if strings.Contains(body, name) || !strings.Contains(body, html.EscapeString(name)) {
 		t.Fatalf("page did not safely escape filename: %q", body)
@@ -86,7 +86,7 @@ func TestDownloadPageEscapesFileName(t *testing.T) {
 func TestDownloadPageListsDuplicateNamesInOrderWithoutLocalPaths(t *testing.T) {
 	server, sess := newMultiFileTestServer(t, []string{"same.txt", "middle.txt", "same.txt"}, []string{"one", "two", "three"})
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
 	body := response.Body.String()
 	first := strings.Index(body, "same.txt")
 	middle := strings.Index(body, "middle.txt")

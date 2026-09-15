@@ -16,7 +16,7 @@ type downloadFileData struct {
 	URL  string
 }
 
-func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
+func (s *handler) downloadPage(w http.ResponseWriter, r *http.Request) {
 	token, ok := s.authorizeRequest(w, r)
 	if !ok {
 		return

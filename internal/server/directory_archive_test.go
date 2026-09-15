@@ -23,7 +23,7 @@ func TestDirectoryArchiveCancellationStopsGeneration(t *testing.T) {
 	cancel()
 	req := httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil).WithContext(ctx)
 	recorder := httptest.NewRecorder()
-	srv.mux.ServeHTTP(recorder, req)
+	srv.ServeHTTP(recorder, req)
 	if recorder.Body.Len() > 1024 {
 		t.Fatalf("cancelled archive wrote %d bytes", recorder.Body.Len())
 	}
@@ -44,7 +44,7 @@ func TestDirectoryArchivePreservesHierarchyOrderAndEmptyDirectories(t *testing.T
 	}
 	srv, sess, _ := newDirectoryTestServer(t, root)
 	recorder := httptest.NewRecorder()
-	srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d", recorder.Code)
 	}
@@ -86,7 +86,7 @@ func TestDirectoryArchiveRejectsUnauthorizedAndChangedTree(t *testing.T) {
 	}
 	srv, sess, _ := newDirectoryTestServer(t, root)
 	recorder := httptest.NewRecorder()
-	srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/not-a-token", nil))
+	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/not-a-token", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("unauthorized status = %d", recorder.Code)
 	}
@@ -97,7 +97,7 @@ func TestDirectoryArchiveRejectsUnauthorizedAndChangedTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder = httptest.NewRecorder()
-	srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
 	zr, err := zip.NewReader(bytes.NewReader(recorder.Body.Bytes()), int64(recorder.Body.Len()))
 	if err == nil && len(zr.File) > 1 {
 		t.Fatal("changed tree was included in archive")
@@ -115,7 +115,7 @@ func TestDirectoryArchiveUsesCurrentSameObjectContents(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
-	srv.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
 	zr, err := zip.NewReader(bytes.NewReader(recorder.Body.Bytes()), int64(recorder.Body.Len()))
 	if err != nil {
 		t.Fatal(err)
