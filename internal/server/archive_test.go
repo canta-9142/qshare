@@ -48,25 +48,6 @@ func TestArchivePreservesOrderContentAndMakesDuplicateNamesUnique(t *testing.T) 
 	}
 }
 
-func TestArchiveRejectsUnauthorizedRequests(t *testing.T) {
-	server, sess := newTestServer(t, "secret")
-	wrong := sess.Token()
-	wrong[0] ^= 0xff
-	for _, token := range []string{"invalid", wrong.String()} {
-		response := httptest.NewRecorder()
-		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+token, nil))
-		if response.Code != http.StatusNotFound {
-			t.Fatalf("status = %d", response.Code)
-		}
-	}
-	server.now = sess.ExpiresAt
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("expired status = %d", response.Code)
-	}
-}
-
 func TestCopyWithContextStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -114,7 +95,7 @@ type countArchiveReader struct{ calls int }
 
 func (r *countArchiveReader) Read([]byte) (int, error) { r.calls++; return 0, io.EOF }
 
-func newMultiFileTestServer(t *testing.T, names, contents []string) (*handler, *session.Session) {
+func newMultiFileTestServer(t *testing.T, names, contents []string) (*fileHandler, *session.Session) {
 	t.Helper()
 	root := t.TempDir()
 	paths := make([]string, len(names))
@@ -133,9 +114,9 @@ func newMultiFileTestServer(t *testing.T, names, contents []string) (*handler, *
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = resources.Close() })
-	sess, err := session.NewSendFiles(resources, time.Hour)
+	sess, err := session.New(time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewSendFile(sess).(*handler), sess
+	return NewSendFile(sess, resources).(*fileHandler), sess
 }

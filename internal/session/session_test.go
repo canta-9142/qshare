@@ -1,13 +1,8 @@
 package session
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/canta-9142/qshare/internal/share"
 )
 
 func TestSessionAuthorize(t *testing.T) {
@@ -76,126 +71,27 @@ func TestSessionTokensAreSeparated(t *testing.T) {
 func TestNewRejectsNonPositiveLifetime(t *testing.T) {
 	for _, lifetime := range []time.Duration{0, -time.Nanosecond} {
 		t.Run(lifetime.String(), func(t *testing.T) {
-			if _, err := NewSendFiles(nil, lifetime); err == nil {
-				t.Fatal("NewSendFiles() error = nil, want error")
-			}
-			if _, err := NewSendText(share.Text{}, lifetime); err == nil {
-				t.Fatal("NewSendText() error = nil, want error")
-			}
-			if _, err := NewReceive(lifetime); err == nil {
-				t.Fatal("NewReceive() error = nil, want error")
+			if _, err := New(lifetime); err == nil {
+				t.Fatal("New() error = nil, want error")
 			}
 		})
 	}
 }
 
-func TestNewSendTextStoresText(t *testing.T) {
-	text, err := share.NewText([]byte("hello"))
+func TestNew(t *testing.T) {
+	before := time.Now()
+	sess, err := New(time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := NewSendText(text, time.Minute)
-	if err != nil {
-		t.Fatalf("NewSendText() error = %v", err)
+	after := time.Now()
+	if sess.ExpiresAt().Before(before.Add(time.Minute)) || sess.ExpiresAt().After(after.Add(time.Minute)) {
+		t.Fatal("expiration is outside the requested lifetime")
 	}
-	got, ok := session.Text()
-	if !ok || got.String() != "hello" {
-		t.Fatalf("Text() = %q, %v; want hello, true", got.String(), ok)
+	if !sess.Authorize(sess.Token(), after) {
+		t.Fatal("session does not authorize its token")
 	}
-	if session.Resources() != nil {
-		t.Fatal("Resources() is not nil for text send session")
-	}
-}
-
-func TestNewReceiveCreatesSessionWithoutResource(t *testing.T) {
-	session, err := NewReceive(time.Minute)
-	if err != nil {
-		t.Fatalf("NewReceive() error = %v", err)
-	}
-	if session.Resources() != nil {
-		t.Fatal("Resources() is not nil for receive session")
-	}
-	if !session.Authorize(session.Token(), time.Now()) {
-		t.Fatal("receive session does not authorize its token")
-	}
-}
-
-func TestSendSessionResolve(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "shared.txt")
-	if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	resources, err := share.OpenCollection([]string{path})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = resources.Close() })
-	sess, err := NewSendFiles(resources, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := resources.Resources()[0].ID()
-	if got, ok := sess.Resolve(sess.Token(), id, time.Now()); !ok || got.Name() != "shared.txt" {
-		t.Fatal("Resolve() rejected valid resource")
-	}
-	if _, ok := sess.Resolve(sess.Token(), "unknown", time.Now()); ok {
-		t.Fatal("Resolve() accepted unknown ID")
-	}
-	wrong := sess.Token()
-	wrong[0] ^= 0xff
-	if _, ok := sess.Resolve(wrong, id, time.Now()); ok {
-		t.Fatal("Resolve() accepted invalid token")
-	}
-	if _, ok := sess.Resolve(sess.Token(), id, sess.ExpiresAt()); ok {
-		t.Fatal("Resolve() accepted expired session")
-	}
-}
-
-func TestSendSessionRejectsResourceFromAnotherSession(t *testing.T) {
-	paths := make([]string, 2)
-	for i := range paths {
-		paths[i] = filepath.Join(t.TempDir(), fmt.Sprintf("%d.txt", i))
-		if err := os.WriteFile(paths[i], []byte("x"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	first, _ := share.OpenCollection(paths[:1])
-	defer first.Close()
-	second, _ := share.OpenCollection(paths[1:])
-	defer second.Close()
-	sess, _ := NewSendFiles(first, time.Hour)
-	if _, ok := sess.Resolve(sess.Token(), second.Resources()[0].ID(), time.Now()); ok {
-		t.Fatal("Resolve() accepted another session's resource ID")
-	}
-}
-
-func TestDirectorySessionResolvesOnlyItsNodes(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "file"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	directory, err := share.OpenDirectory(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer directory.Close()
-	sess, err := NewSendDirectory(directory, time.Hour)
-	if err != nil {
-		t.Fatal(err)
-	}
-	node := directory.Root().Children()[0]
-	if got, ok := sess.ResolveNode(sess.Token(), node.ID(), time.Now()); !ok || got != node {
-		t.Fatal("ResolveNode() rejected node")
-	}
-	if _, ok := sess.ResolveNode(sess.Token(), "unknown", time.Now()); ok {
-		t.Fatal("ResolveNode() accepted unknown ID")
-	}
-	wrong := sess.Token()
-	wrong[0] ^= 0xff
-	if _, ok := sess.ResolveNode(wrong, node.ID(), time.Now()); ok {
-		t.Fatal("ResolveNode() accepted wrong token")
-	}
-	if _, ok := sess.ResolveNode(sess.Token(), node.ID(), sess.ExpiresAt()); ok {
-		t.Fatal("ResolveNode() accepted expired session")
+	if sess.Authorize(sess.Token(), sess.ExpiresAt()) {
+		t.Fatal("session authorizes its token at expiration")
 	}
 }

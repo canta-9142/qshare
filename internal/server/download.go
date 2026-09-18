@@ -9,14 +9,8 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func (s *handler) download(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	resource, ok := s.session.Resolve(token, share.ResourceID(r.PathValue("resource")), s.now())
+func (s *fileHandler) download(w http.ResponseWriter, r *http.Request) {
+	resource, ok := s.files.Lookup(share.ResourceID(r.PathValue("resource")))
 	if !ok {
 		http.NotFound(w, r)
 		return

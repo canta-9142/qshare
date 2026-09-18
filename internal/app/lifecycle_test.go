@@ -112,7 +112,7 @@ func TestSessionSignalInterruptsQuitHTTPDrain(t *testing.T) {
 
 func TestSessionSignalPreservesExpirationHTTPDrain(t *testing.T) {
 	request := newBlockedHTTPRequest(t)
-	request.run.session, _ = session.NewReceive(time.Nanosecond)
+	request.run.session, _ = session.New(time.Nanosecond)
 	ctx, cancel := context.WithCancelCause(t.Context())
 	defer cancel(nil)
 	restored := make(chan struct{})
@@ -223,7 +223,7 @@ func TestSessionSignalInterruptsTextDrain(t *testing.T) {
 func TestSessionExpirationCancelsTextAndAllowsEarlyRestoration(t *testing.T) {
 	run, _ := newLifecycleRun(t, http.NotFoundHandler())
 	processorCtx, submissionDone, release := blockTextProcessing(t, run)
-	run.session, _ = session.NewReceive(time.Nanosecond)
+	run.session, _ = session.New(time.Nanosecond)
 	ctx, cancel := context.WithCancelCause(t.Context())
 	defer cancel(nil)
 	restored := make(chan struct{})
@@ -366,7 +366,7 @@ func assertNotClosed(t *testing.T, done <-chan struct{}, message string) {
 func newLifecycleRun(t *testing.T, h http.Handler) (*sessionRun, *testListener) {
 	t.Helper()
 	ln := newTestListener(t)
-	sess, err := session.NewReceive(time.Hour)
+	sess, err := session.New(time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

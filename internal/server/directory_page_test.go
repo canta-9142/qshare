@@ -132,9 +132,9 @@ func TestDirectoryPageDescribesEmptyDirectory(t *testing.T) {
 	}
 }
 
-func TestDirectoryPageRejectsUnauthorizedAndUnknownNodes(t *testing.T) {
+func TestDirectoryPageRejectsUnknownNodes(t *testing.T) {
 	srv, sess, _ := newDirectoryTestServer(t, t.TempDir())
-	for _, target := range []string{"/s/not-a-token", "/b/" + sess.Token().String() + "/unknown", "/b/" + sess.Token().String() + "/..%2fetc"} {
+	for _, target := range []string{"/b/" + sess.Token().String() + "/unknown", "/b/" + sess.Token().String() + "/..%2fetc"} {
 		recorder := httptest.NewRecorder()
 		srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
 		if recorder.Code != http.StatusNotFound {
@@ -143,41 +143,38 @@ func TestDirectoryPageRejectsUnauthorizedAndUnknownNodes(t *testing.T) {
 	}
 }
 
-func TestDirectoryRootAuthorization(t *testing.T) {
-	srv, sess, _ := newDirectoryTestServer(t, t.TempDir())
-	wrong := sess.Token()
-	wrong[0] ^= 0xff
-	for _, tt := range []struct {
-		name   string
-		token  string
-		now    time.Time
-		status int
-	}{
-		{"wrong", wrong.String(), sess.ExpiresAt().Add(-time.Second), http.StatusNotFound},
-		{"before expiry", sess.Token().String(), sess.ExpiresAt().Add(-time.Nanosecond), http.StatusOK},
-		{"expiry boundary", sess.Token().String(), sess.ExpiresAt(), http.StatusNotFound},
+func TestDirectoryRejectsAnotherHandlersNodes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first, firstSession, firstTree := newDirectoryTestServer(t, root)
+	_, secondSession, secondTree := newDirectoryTestServer(t, root)
+	for _, path := range []string{
+		"/b/" + firstSession.Token().String() + "/" + string(secondTree.Root().ID()),
+		"/d/" + firstSession.Token().String() + "/" + string(secondTree.Root().Children()[0].ID()),
+		"/b/" + secondSession.Token().String() + "/" + string(firstTree.Root().ID()),
+		"/d/" + secondSession.Token().String() + "/" + string(firstTree.Root().Children()[0].ID()),
+		"/d/" + secondSession.Token().String() + "/" + string(secondTree.Root().Children()[0].ID()),
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			srv.now = func() time.Time { return tt.now }
-			recorder := httptest.NewRecorder()
-			srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/s/"+tt.token, nil))
-			if recorder.Code != tt.status {
-				t.Fatalf("status = %d, want %d", recorder.Code, tt.status)
-			}
-		})
+		response := httptest.NewRecorder()
+		first.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", response.Code)
+		}
 	}
 }
 
-func newDirectoryTestServer(t *testing.T, root string) (*handler, *session.Session, *share.Directory) {
+func newDirectoryTestServer(t *testing.T, root string) (*directoryHandler, *session.Session, *share.Directory) {
 	t.Helper()
 	directory, err := share.OpenDirectory(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = directory.Close() })
-	sess, err := session.NewSendDirectory(directory, time.Hour)
+	sess, err := session.New(time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewSendDirectory(sess).(*handler), sess, directory
+	return NewSendDirectory(sess, directory).(*directoryHandler), sess, directory
 }

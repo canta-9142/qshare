@@ -36,7 +36,7 @@ func TestDownloadPage(t *testing.T) {
 		t.Error("page does not contain shared filename")
 	}
 
-	wantURL := downloadURL(sess)
+	wantURL := downloadURL(server)
 	if !strings.Contains(html, wantURL) {
 		t.Error("page does not contain authenticated download URL")
 	}
@@ -50,25 +50,6 @@ func TestDownloadPage(t *testing.T) {
 		if got := result.Header.Get(name); got != want {
 			t.Errorf("%s = %q, want %q", name, got, want)
 		}
-	}
-}
-
-func TestDownloadPageRejectsUnauthorizedRequests(t *testing.T) {
-	server, sess := newTestServer(t, "content")
-	other := sess.Token()
-	other[0] ^= 0xff
-	for _, path := range []string{"/s/not-a-token", "/s/" + other.String()} {
-		response := httptest.NewRecorder()
-		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		if response.Code != http.StatusNotFound {
-			t.Errorf("%s: status = %d, want 404", path, response.Code)
-		}
-	}
-	server.now = sess.ExpiresAt
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil))
-	if response.Code != http.StatusNotFound {
-		t.Errorf("expired page status = %d, want 404", response.Code)
 	}
 }
 
@@ -94,7 +75,7 @@ func TestDownloadPageListsDuplicateNamesInOrderWithoutLocalPaths(t *testing.T) {
 	if first < 0 || !(first < middle && middle < last) {
 		t.Fatalf("files are not in CLI order: %q", body)
 	}
-	for _, resource := range sess.Resources().Resources() {
+	for _, resource := range server.files.Resources() {
 		url := "/d/" + sess.Token().String() + "/" + string(resource.ID())
 		if !strings.Contains(body, url) {
 			t.Errorf("page missing URL %q", url)

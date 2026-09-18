@@ -83,34 +83,6 @@ func TestUploadCanBeRepeatedInSameSession(t *testing.T) {
 	}
 }
 
-func TestUploadRejectsUnauthorizedRequests(t *testing.T) {
-	calls := 0
-	store := uploadStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
-		calls++
-		return receive.Result{}, nil
-	})
-	server, sess := newReceiveTestServer(t, store)
-	other := sess.Token()
-	other[0] ^= 0xff
-
-	for _, path := range []string{"/u/not-a-token", "/u/" + other.String()} {
-		response := httptest.NewRecorder()
-		server.ServeHTTP(response, newUploadRequest(t, path, "file.txt", "secret"))
-		if response.Code != http.StatusNotFound {
-			t.Errorf("%s: status = %d, want %d", path, response.Code, http.StatusNotFound)
-		}
-	}
-	server.now = sess.ExpiresAt
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, newUploadRequest(t, "/u/"+sess.Token().String(), "file.txt", "secret"))
-	if response.Code != http.StatusNotFound {
-		t.Errorf("expired request status = %d, want %d", response.Code, http.StatusNotFound)
-	}
-	if calls != 0 {
-		t.Errorf("Save() calls = %d, want 0", calls)
-	}
-}
-
 func TestUploadRejectsInvalidMultipartRequest(t *testing.T) {
 	server, sess := newReceiveTestServer(t, uploadStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
 		t.Fatal("Save() called for invalid request")
@@ -312,13 +284,13 @@ func (function uploadStoreFunc) Save(ctx context.Context, name string, source io
 	return function(ctx, name, source)
 }
 
-func newReceiveTestServer(t *testing.T, store uploadStore) (*handler, *session.Session) {
+func newReceiveTestServer(t *testing.T, store uploadStore) (*receiveHandler, *session.Session) {
 	t.Helper()
-	sess, err := session.NewReceive(time.Hour)
+	sess, err := session.New(time.Hour)
 	if err != nil {
-		t.Fatalf("session.NewReceive() error = %v", err)
+		t.Fatalf("session.New() error = %v", err)
 	}
-	return NewReceive(sess, store, nil).(*handler), sess
+	return newReceive(sess, store, nil), sess
 }
 
 func newUploadRequest(t *testing.T, path, filename, content string) *http.Request {

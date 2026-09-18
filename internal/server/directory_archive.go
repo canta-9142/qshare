@@ -11,13 +11,8 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func (s *handler) directoryArchive(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) || s.session.Directory() == nil {
-		http.NotFound(w, r)
-		return
-	}
-	root := s.session.Directory().Root()
+func (s *directoryHandler) directoryArchive(w http.ResponseWriter, r *http.Request) {
+	root := s.directory.Root()
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": root.Name() + ".zip"}))
 	w.Header().Set("Cache-Control", "private, no-store")
@@ -30,12 +25,12 @@ func (s *handler) directoryArchive(w http.ResponseWriter, r *http.Request) {
 	_ = zw.Close()
 }
 
-func (s *handler) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node *share.Node, archivePath string) error {
+func (s *directoryHandler) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node *share.Node, archivePath string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if node.Kind() == share.NodeDirectory {
-		if err := s.session.Directory().VerifyDirectory(node); err != nil {
+		if err := s.directory.VerifyDirectory(node); err != nil {
 			return err
 		}
 		header := &zip.FileHeader{Name: archivePath + "/", Method: zip.Store}
@@ -50,7 +45,7 @@ func (s *handler) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, nod
 		}
 		return nil
 	}
-	file, err := s.session.Directory().OpenFile(node)
+	file, err := s.directory.OpenFile(node)
 	if err != nil {
 		return err
 	}

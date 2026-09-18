@@ -16,20 +16,15 @@ type downloadFileData struct {
 	URL  string
 }
 
-func (s *handler) downloadPage(w http.ResponseWriter, r *http.Request) {
-	token, ok := s.authorizeRequest(w, r)
-	if !ok {
-		return
-	}
-
+func (s *fileHandler) downloadPage(w http.ResponseWriter, r *http.Request) {
 	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'")
 
-	data := downloadPageData{ArchiveURL: "/z/" + token.String()}
-	for _, resource := range s.session.Resources().Resources() {
+	data := downloadPageData{ArchiveURL: "/z/" + s.session.Token().String()}
+	for _, resource := range s.files.Resources() {
 		data.Files = append(data.Files, downloadFileData{
 			Name: resource.Name(),
 			Size: formatFileSize(resource.Size()),
-			URL:  "/d/" + token.String() + "/" + string(resource.ID()),
+			URL:  "/d/" + s.session.Token().String() + "/" + string(resource.ID()),
 		})
 	}
 

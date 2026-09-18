@@ -16,20 +16,15 @@ type uploadPageData struct {
 	MaxTextSizeText   string
 }
 
-func (s *handler) uploadPage(w http.ResponseWriter, r *http.Request) {
-	token, ok := s.authorizeRequest(w, r)
-	if !ok {
-		return
-	}
-
+func (s *receiveHandler) uploadPage(w http.ResponseWriter, r *http.Request) {
 	setHTMLResponseHeaders(
 		w,
 		"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'",
 	)
 
 	data := uploadPageData{
-		UploadURL:         "/u/" + token.String(),
-		TextURL:           "/t/" + token.String(),
+		UploadURL:         "/u/" + s.session.Token().String(),
+		TextURL:           "/t/" + s.session.Token().String(),
 		MaxUploadSize:     receive.MaxFileSize,
 		MaxUploadSizeText: formatFileSize(receive.MaxFileSize),
 		MaxTextSize:       share.MaxTextSize,

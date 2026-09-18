@@ -55,11 +55,16 @@ Owns operation orchestration:
 
 Tests replace listener acquisition and external platform operations. HTTP
 handlers are built directly, without mode-specific server factories.
+The application owns shared collections, directories, text, the receive store,
+and the text processor. It lends these resources to HTTP handlers and releases
+resources requiring cleanup only after stopping HTTP.
 
 ### `internal/session`
 
-Owns the session token, expiry, operation resources, and authorization checks.
-It has no HTTP, terminal, or OS-networking dependency.
+Owns only the session token, expiry, and authorization checks. All modes use
+`session.New(lifetime)`. Session neither references nor closes operation
+resources and has no dependency on share, receive, HTTP, terminal, or
+OS-networking packages.
 
 ### `internal/share`
 
@@ -68,10 +73,11 @@ Files and directory nodes receive opaque IDs. Directory sessions retain a
 startup-time authorization tree and filesystem identity for each included
 object.
 
-HTTP input resolves a token and opaque resource ID:
+After session authentication, HTTP input resolves an opaque resource ID only
+within the resource bound to that handler at construction:
 
 ```text
-CLI path → validated resource → session → opaque ID → HTTP lookup
+CLI path → app-owned validated resource → mode handler → opaque ID lookup
 ```
 
 It must never become:
@@ -96,6 +102,18 @@ Mode constructors return `http.Handler`. A small `NewHTTPServer` function applie
 the HTTP timeout and header limits and returns a standard `*http.Server`.
 This package does not bind listeners, launch serving goroutines, or own shutdown
 notifications; those belong to application orchestration.
+
+Each mode constructor takes a session and the concrete resources that mode
+needs. File, directory, text, and receive handlers hold only their mode's
+resources. Receive handlers retain narrow internal interfaces for testing
+upload and text-processing failures.
+
+All protected routes are registered through one authentication wrapper. It
+parses the token and checks authorization and expiry after `ServeMux` sets path
+values, before resource lookup or request body processing. Invalid credentials
+return 404. The authenticated session and lookup resource are fixed together
+when the handler is built; there is no global resource registry. Handlers call
+`Collection.Lookup` or `Directory.Lookup` directly after authentication.
 
 Browser templates are embedded from `internal/server/web`, keeping the binary
 self-contained.

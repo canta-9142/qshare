@@ -68,27 +68,3 @@ func TestUploadPage(t *testing.T) {
 		}
 	}
 }
-
-func TestUploadPageRejectsUnauthorizedRequests(t *testing.T) {
-	server, sess := newReceiveTestServer(t, uploadStoreFunc(nil))
-	other := sess.Token()
-	other[0] ^= 0xff
-
-	for _, path := range []string{"/s/not-a-token", "/s/" + other.String()} {
-		response := httptest.NewRecorder()
-		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		if response.Code != http.StatusNotFound {
-			t.Errorf("%s: status = %d, want %d", path, response.Code, http.StatusNotFound)
-		}
-	}
-
-	server.now = sess.ExpiresAt
-	response := httptest.NewRecorder()
-	server.ServeHTTP(
-		response,
-		httptest.NewRequest(http.MethodGet, "/s/"+sess.Token().String(), nil),
-	)
-	if response.Code != http.StatusNotFound {
-		t.Errorf("expired page status = %d, want %d", response.Code, http.StatusNotFound)
-	}
-}

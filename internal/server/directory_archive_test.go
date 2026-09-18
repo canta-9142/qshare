@@ -75,7 +75,7 @@ func TestDirectoryArchivePreservesHierarchyOrderAndEmptyDirectories(t *testing.T
 	}
 }
 
-func TestDirectoryArchiveRejectsUnauthorizedAndChangedTree(t *testing.T) {
+func TestDirectoryArchiveRejectsChangedTree(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "dir")
 	if err := os.Mkdir(dir, 0o700); err != nil {
@@ -85,18 +85,13 @@ func TestDirectoryArchiveRejectsUnauthorizedAndChangedTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv, sess, _ := newDirectoryTestServer(t, root)
-	recorder := httptest.NewRecorder()
-	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/not-a-token", nil))
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("unauthorized status = %d", recorder.Code)
-	}
 	if err := os.Rename(dir, filepath.Join(root, "moved")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	recorder = httptest.NewRecorder()
+	recorder := httptest.NewRecorder()
 	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
 	zr, err := zip.NewReader(bytes.NewReader(recorder.Body.Bytes()), int64(recorder.Body.Len()))
 	if err == nil && len(zr.File) > 1 {

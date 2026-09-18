@@ -13,11 +13,7 @@ import (
 
 const multipartOverhead int64 = 1 << 20
 
-func (s *handler) upload(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authorizeRequest(w, r); !ok {
-		return
-	}
-
+func (s *receiveHandler) upload(w http.ResponseWriter, r *http.Request) {
 	if s.uploadStore == nil {
 		http.NotFound(w, r)
 		return

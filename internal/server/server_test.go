@@ -1,22 +1,116 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func TestDownload(t *testing.T) {
-	server, sess := newTestServer(t, "download content")
+func TestAllRoutesRequireTheirSession(t *testing.T) {
+	files, _ := newTestServer(t, "secret")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "secret.txt"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	directory, _, tree := newDirectoryTestServer(t, root)
+	text, _ := newTextTestServer(t, "secret")
+	sess, err := session.New(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saveCalls, submitCalls int
+	receiver := newReceive(sess,
+		uploadStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
+			saveCalls++
+			return receive.Result{}, nil
+		}),
+		textSubmitterFunc(func(context.Context, share.Text) error {
+			submitCalls++
+			return nil
+		}),
+	)
+	other, err := session.New(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	request := httptest.NewRequest(http.MethodGet, downloadURL(sess), nil)
+	filePath := "/d/%s/" + string(files.files.Resources()[0].ID())
+	directoryPath := "/b/%s/" + string(tree.Root().ID())
+	directoryFilePath := "/d/%s/" + string(tree.Root().Children()[0].ID())
+	for _, route := range []struct {
+		mode         string
+		h            *handler
+		method, path string
+		status       int
+	}{
+		{"files", files.handler, http.MethodGet, "/s/%s", http.StatusOK},
+		{"files", files.handler, http.MethodHead, "/s/%s", http.StatusOK},
+		{"files", files.handler, http.MethodGet, filePath, http.StatusOK},
+		{"files", files.handler, http.MethodHead, filePath, http.StatusOK},
+		{"files", files.handler, http.MethodGet, "/z/%s", http.StatusOK},
+		{"files", files.handler, http.MethodHead, "/z/%s", http.StatusOK},
+		{"directory", directory.handler, http.MethodGet, "/s/%s", http.StatusOK},
+		{"directory", directory.handler, http.MethodHead, "/s/%s", http.StatusOK},
+		{"directory", directory.handler, http.MethodGet, directoryPath, http.StatusOK},
+		{"directory", directory.handler, http.MethodHead, directoryPath, http.StatusOK},
+		{"directory", directory.handler, http.MethodGet, directoryFilePath, http.StatusOK},
+		{"directory", directory.handler, http.MethodHead, directoryFilePath, http.StatusOK},
+		{"directory", directory.handler, http.MethodGet, "/z/%s", http.StatusOK},
+		{"directory", directory.handler, http.MethodHead, "/z/%s", http.StatusOK},
+		{"text", text.handler, http.MethodGet, "/s/%s", http.StatusOK},
+		{"text", text.handler, http.MethodHead, "/s/%s", http.StatusOK},
+		{"receive", receiver.handler, http.MethodGet, "/s/%s", http.StatusOK},
+		{"receive", receiver.handler, http.MethodHead, "/s/%s", http.StatusOK},
+		{"receive", receiver.handler, http.MethodPost, "/u/%s", http.StatusBadRequest}, // Missing multipart header.
+		{"receive", receiver.handler, http.MethodPost, "/t/%s", http.StatusNoContent},
+	} {
+		for _, auth := range []struct {
+			name, token string
+			now         time.Time
+			status      int
+		}{
+			{"valid", route.h.session.Token().String(), route.h.session.ExpiresAt().Add(-time.Nanosecond), route.status},
+			{"malformed", "not-a-token", time.Now(), http.StatusNotFound},
+			{"another session", other.Token().String(), time.Now(), http.StatusNotFound},
+			{"expired", route.h.session.Token().String(), route.h.session.ExpiresAt(), http.StatusNotFound},
+		} {
+			t.Run(route.mode+"/"+route.method+route.path+"/"+auth.name, func(t *testing.T) {
+				saveCalls, submitCalls = 0, 0
+				route.h.now = func() time.Time { return auth.now }
+				body := &countArchiveReader{}
+				response := httptest.NewRecorder()
+				route.h.ServeHTTP(response, httptest.NewRequest(route.method, fmt.Sprintf(route.path, auth.token), body))
+				if response.Code != auth.status {
+					t.Fatalf("status = %d, want %d", response.Code, auth.status)
+				}
+				if auth.status == http.StatusNotFound {
+					if body.calls != 0 || saveCalls != 0 || submitCalls != 0 {
+						t.Fatal("unauthorized request read its body or invoked a receiver")
+					}
+					if strings.Contains(response.Body.String(), "secret") {
+						t.Fatal("unauthorized response exposed shared content")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestDownload(t *testing.T) {
+	server, _ := newTestServer(t, "download content")
+
+	request := httptest.NewRequest(http.MethodGet, downloadURL(server), nil)
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 
@@ -44,8 +138,8 @@ func TestDownload(t *testing.T) {
 }
 
 func TestDownloadCanBeRetried(t *testing.T) {
-	server, sess := newTestServer(t, "download content")
-	path := downloadURL(sess)
+	server, _ := newTestServer(t, "download content")
+	path := downloadURL(server)
 	for attempt := 0; attempt < 2; attempt++ {
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -56,8 +150,8 @@ func TestDownloadCanBeRetried(t *testing.T) {
 }
 
 func TestDownloadHeadAndRangeRequests(t *testing.T) {
-	server, sess := newTestServer(t, "abcdef")
-	url := downloadURL(sess)
+	server, _ := newTestServer(t, "abcdef")
+	url := downloadURL(server)
 
 	t.Run("HEAD", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodHead, url, nil)
@@ -113,9 +207,9 @@ func TestDownloadHeadAndRangeRequests(t *testing.T) {
 }
 
 func TestDownloadRejectsUnsupportedMethod(t *testing.T) {
-	server, sess := newTestServer(t, "secret")
+	server, _ := newTestServer(t, "secret")
 	response := httptest.NewRecorder()
-	server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, downloadURL(sess), nil))
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, downloadURL(server), nil))
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
 	}
@@ -130,17 +224,14 @@ func TestHTTPServerLimits(t *testing.T) {
 	}
 }
 
-func TestDownloadRejectsUnauthorizedRequests(t *testing.T) {
+func TestDownloadRejectsUnknownResourceAndRoute(t *testing.T) {
 	server, sess := newTestServer(t, "secret content")
-	otherToken := sess.Token()
-	otherToken[0] ^= 0xff
 
 	tests := []struct {
 		name string
 		path string
 	}{
-		{name: "malformed token", path: "/d/not-a-token"},
-		{name: "different token", path: "/d/" + otherToken.String() + "/" + string(sess.Resources().Resources()[0].ID())},
+		{name: "missing resource", path: "/d/" + sess.Token().String()},
 		{name: "unknown resource", path: "/d/" + sess.Token().String() + "/unknown"},
 		{name: "unknown route", path: "/unknown"},
 	}
@@ -163,25 +254,12 @@ func TestDownloadRejectsUnauthorizedRequests(t *testing.T) {
 
 func TestDownloadRejectsAnotherSessionsResourceID(t *testing.T) {
 	server, sess := newTestServer(t, "first")
-	_, other := newNamedTestServer(t, "other.txt", "second")
-	path := "/d/" + sess.Token().String() + "/" + string(other.Resources().Resources()[0].ID())
+	other, _ := newNamedTestServer(t, "other.txt", "second")
+	path := "/d/" + sess.Token().String() + "/" + string(other.files.Resources()[0].ID())
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", response.Code)
-	}
-}
-
-func TestDownloadRejectsRequestAtExpirationBoundary(t *testing.T) {
-	server, sess := newTestServer(t, "secret content")
-	server.now = sess.ExpiresAt
-
-	request := httptest.NewRequest(http.MethodGet, downloadURL(sess), nil)
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, request)
-
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 }
 
@@ -208,11 +286,11 @@ func TestDownloadDoesNotServeTraversalPaths(t *testing.T) {
 	}
 }
 
-func newTestServer(t *testing.T, content string) (*handler, *session.Session) {
+func newTestServer(t *testing.T, content string) (*fileHandler, *session.Session) {
 	return newNamedTestServer(t, "shared.txt", content)
 }
 
-func newNamedTestServer(t *testing.T, name, content string) (*handler, *session.Session) {
+func newNamedTestServer(t *testing.T, name, content string) (*fileHandler, *session.Session) {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), name)
@@ -224,13 +302,13 @@ func newNamedTestServer(t *testing.T, name, content string) (*handler, *session.
 		t.Fatalf("share.OpenCollection() error = %v", err)
 	}
 	t.Cleanup(func() { _ = resources.Close() })
-	sess, err := session.NewSendFiles(resources, time.Hour)
+	sess, err := session.New(time.Hour)
 	if err != nil {
-		t.Fatalf("session.NewSendFiles() error = %v", err)
+		t.Fatalf("session.New() error = %v", err)
 	}
-	return NewSendFile(sess).(*handler), sess
+	return NewSendFile(sess, resources).(*fileHandler), sess
 }
 
-func downloadURL(sess *session.Session) string {
-	return "/d/" + sess.Token().String() + "/" + string(sess.Resources().Resources()[0].ID())
+func downloadURL(server *fileHandler) string {
+	return "/d/" + server.session.Token().String() + "/" + string(server.files.Resources()[0].ID())
 }

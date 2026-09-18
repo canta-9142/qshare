@@ -6,18 +6,13 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func (s *handler) directoryDownload(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	node, ok := s.session.ResolveNode(token, share.ResourceID(r.PathValue("resource")), s.now())
+func (s *directoryHandler) directoryDownload(w http.ResponseWriter, r *http.Request) {
+	node, ok := s.directory.Lookup(share.ResourceID(r.PathValue("resource")))
 	if !ok || node.Kind() != share.NodeFile {
 		http.NotFound(w, r)
 		return
 	}
-	file, err := s.session.Directory().OpenFile(node)
+	file, err := s.directory.OpenFile(node)
 	if err != nil {
 		http.NotFound(w, r)
 		return

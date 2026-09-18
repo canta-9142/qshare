@@ -22,33 +22,20 @@ type directoryLinkData struct {
 }
 type directoryFileData struct{ Name, Size, URL string }
 
-func (s *handler) directoryRoot(w http.ResponseWriter, r *http.Request) {
-	token, ok := s.authorizeRequest(w, r)
-	if !ok {
-		return
-	}
-	if s.session.Directory() == nil {
-		http.NotFound(w, r)
-		return
-	}
-	s.renderDirectory(w, token.String(), s.session.Directory().Root())
+func (s *directoryHandler) directoryRoot(w http.ResponseWriter, r *http.Request) {
+	s.renderDirectory(w, s.session.Token().String(), s.directory.Root())
 }
 
-func (s *handler) directoryPage(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	node, ok := s.session.ResolveNode(token, share.ResourceID(r.PathValue("resource")), s.now())
+func (s *directoryHandler) directoryPage(w http.ResponseWriter, r *http.Request) {
+	node, ok := s.directory.Lookup(share.ResourceID(r.PathValue("resource")))
 	if !ok || node.Kind() != share.NodeDirectory {
 		http.NotFound(w, r)
 		return
 	}
-	s.renderDirectory(w, token.String(), node)
+	s.renderDirectory(w, s.session.Token().String(), node)
 }
 
-func (s *handler) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
+func (s *directoryHandler) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
 	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'")
 	_ = pageTemplates.ExecuteTemplate(w, "directory.html", buildDirectoryPageData(token, node))
 }

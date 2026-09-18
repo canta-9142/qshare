@@ -9,13 +9,7 @@ import (
 	"path/filepath"
 )
 
-func (s *handler) archive(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) {
-		http.NotFound(w, r)
-		return
-	}
-
+func (s *fileHandler) archive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="qshare.zip"`)
 	w.Header().Set("Cache-Control", "private, no-store")
@@ -23,7 +17,7 @@ func (s *handler) archive(w http.ResponseWriter, r *http.Request) {
 
 	zw := zip.NewWriter(w)
 	used := make(map[string]struct{})
-	for _, resource := range s.session.Resources().Resources() {
+	for _, resource := range s.files.Resources() {
 		if err := r.Context().Err(); err != nil {
 			_ = zw.Close()
 			return

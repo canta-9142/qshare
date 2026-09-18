@@ -68,11 +68,11 @@ func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 		if err != nil {
 			return err
 		}
-		run.session, err = session.NewSendFiles(run.files, req.Lifetime)
+		run.session, err = session.New(req.Lifetime)
 		if err != nil {
 			return err
 		}
-		run.server = server.NewHTTPServer(server.NewSendFile(run.session))
+		run.server = server.NewHTTPServer(server.NewSendFile(run.session, run.files))
 		run.heading = fmt.Sprintf("Sharing  %d file(s)", len(run.files.Resources()))
 
 	case OperationSendDirectory:
@@ -83,19 +83,19 @@ func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 		if err != nil {
 			return err
 		}
-		run.session, err = session.NewSendDirectory(run.directory, req.Lifetime)
+		run.session, err = session.New(req.Lifetime)
 		if err != nil {
 			return err
 		}
-		run.server = server.NewHTTPServer(server.NewSendDirectory(run.session))
+		run.server = server.NewHTTPServer(server.NewSendDirectory(run.session, run.directory))
 		run.heading = fmt.Sprintf("Sharing directory  %s", run.directory.Root().Name())
 
 	case OperationSendText:
-		run.session, err = session.NewSendText(req.Text, req.Lifetime)
+		run.session, err = session.New(req.Lifetime)
 		if err != nil {
 			return err
 		}
-		run.server = server.NewHTTPServer(server.NewSendText(run.session))
+		run.server = server.NewHTTPServer(server.NewSendText(run.session, req.Text))
 		run.heading = "Sharing text"
 
 	case OperationReceive:
@@ -107,7 +107,7 @@ func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 		if err != nil {
 			return fmt.Errorf("open receive store: %w", err)
 		}
-		run.session, err = session.NewReceive(req.Lifetime)
+		run.session, err = session.New(req.Lifetime)
 		if err != nil {
 			return err
 		}
