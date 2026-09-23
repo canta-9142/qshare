@@ -3,7 +3,6 @@ package share
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -172,7 +171,7 @@ func (d *Directory) uniqueID(makeID func() (ResourceID, error)) (ResourceID, err
 func (d *Directory) Root() *Node                        { return d.node }
 func (d *Directory) Lookup(id ResourceID) (*Node, bool) { n, ok := d.byID[id]; return n, ok }
 
-func (d *Directory) OpenFile(node *Node) (*DirectoryFile, error) {
+func (d *Directory) OpenFile(node *Node) (*File, error) {
 	if node == nil || node.kind != NodeFile || d.byID[node.id] != node {
 		return nil, errors.New("node is not an authorized file")
 	}
@@ -197,7 +196,7 @@ func (d *Directory) OpenFile(node *Node) (*DirectoryFile, error) {
 		file.Close()
 		return nil, errors.New("authorized file was replaced")
 	}
-	return &DirectoryFile{file: file, name: node.name, size: info.Size(), modTime: info.ModTime()}, nil
+	return &File{file: file, name: node.name, size: info.Size(), modTime: info.ModTime()}, nil
 }
 
 func (d *Directory) VerifyDirectory(node *Node) error {
@@ -244,18 +243,6 @@ func (d *Directory) openAuthorizedRoot() (*os.File, error) {
 	return file, nil
 }
 
-type DirectoryFile struct {
-	file    *os.File
-	name    string
-	size    int64
-	modTime time.Time
-}
-
-func (f *DirectoryFile) Name() string          { return f.name }
-func (f *DirectoryFile) Size() int64           { return f.size }
-func (f *DirectoryFile) ModTime() time.Time    { return f.modTime }
-func (f *DirectoryFile) Reader() io.ReadSeeker { return io.NewSectionReader(f.file, 0, f.size) }
-func (f *DirectoryFile) Close() error          { return f.file.Close() }
 func (d *Directory) Close() error {
 	if d == nil || d.root == nil {
 		return nil
