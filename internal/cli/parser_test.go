@@ -14,17 +14,16 @@ import (
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func TestMapArgumentsSelectsDirectoryMode(t *testing.T) {
+func TestMapArgumentsPassesPathsWithoutClassifying(t *testing.T) {
 	dir := t.TempDir()
-	result, err := mapArguments(arguments{Files: []string{dir}, Expire: time.Minute})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Request.Operation != app.OperationSendDirectory {
-		t.Fatalf("Operation = %v", result.Request.Operation)
-	}
-	if _, err := mapArguments(arguments{Files: []string{dir, "file"}, Expire: time.Minute}); err == nil {
-		t.Fatal("directory combined with file was accepted")
+	for _, paths := range [][]string{{dir}, {dir, "missing"}, {"missing", dir}} {
+		result, err := mapArguments(arguments{Files: paths, Expire: time.Minute})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Request.Operation != app.OperationSendPaths || !slices.Equal(result.Request.Paths, paths) {
+			t.Fatalf("Request = %+v, want path send with %v", result.Request, paths)
+		}
 	}
 }
 
@@ -303,8 +302,8 @@ func TestParseMapsArguments(t *testing.T) {
 			if result.Exit {
 				t.Fatalf("parse() Exit = true, code %d", result.Code)
 			}
-			if result.Request.Operation != app.OperationSendFile {
-				t.Errorf("Operation = %v, want OperationSendFile", result.Request.Operation)
+			if result.Request.Operation != app.OperationSendPaths {
+				t.Errorf("Operation = %v, want OperationSendPaths", result.Request.Operation)
 			}
 			if result.Request.Paths[0] != tt.wantPaths {
 				t.Errorf("Path = %q, want %q", result.Request.Paths[0], tt.wantPaths)

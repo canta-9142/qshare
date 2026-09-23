@@ -40,8 +40,7 @@ type Application struct {
 	listen                func(string, string) (net.Listener, error)
 	openReceiveStore      func(string) (*receive.Store, error)
 	newClipboardSink      func(string) (receive.TextSink, error)
-	openCollection        func([]string) (*share.Collection, error)
-	openDirectory         func(string) (*share.Directory, error)
+	openPaths             func([]string) (*share.Collection, *share.Directory, error)
 	renderQR              func(io.Writer, string) error
 }
 
@@ -77,8 +76,7 @@ func New(deps Dependencies) *Application {
 			}
 			return sink, err
 		},
-		openCollection: share.OpenCollection,
-		openDirectory:  share.OpenDirectory,
-		renderQR:       qr.Render,
+		openPaths: share.OpenPaths,
+		renderQR:  qr.Render,
 	}
 }

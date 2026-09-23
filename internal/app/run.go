@@ -12,6 +12,7 @@ import (
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/server"
 	"github.com/canta-9142/qshare/internal/session"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
 func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
@@ -63,32 +64,25 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 // All modes return through Run's common cleanup, including preparation failures.
 func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
 	switch req.Operation {
-	case OperationSendFile:
-		run.files, err = a.openCollection(req.Paths)
+	case OperationSendPaths:
+		run.files, run.directory, err = a.openPaths(req.Paths)
 		if err != nil {
+			if errors.Is(err, share.ErrInvalidSelection) {
+				return invalidRequest(err)
+			}
 			return err
 		}
 		run.session, err = session.New(req.Lifetime)
 		if err != nil {
 			return err
 		}
-		run.server = server.NewHTTPServer(server.NewSendFile(run.session, run.files))
-		run.heading = fmt.Sprintf("Sharing  %d file(s)", len(run.files.Resources()))
-
-	case OperationSendDirectory:
-		if len(req.Paths) != 1 {
-			return fmt.Errorf("directory send requires exactly one path")
+		if run.directory != nil {
+			run.server = server.NewHTTPServer(server.NewSendDirectory(run.session, run.directory))
+			run.heading = fmt.Sprintf("Sharing directory  %s", run.directory.Root().Name())
+		} else {
+			run.server = server.NewHTTPServer(server.NewSendFile(run.session, run.files))
+			run.heading = fmt.Sprintf("Sharing  %d file(s)", len(run.files.Resources()))
 		}
-		run.directory, err = a.openDirectory(req.Paths[0])
-		if err != nil {
-			return err
-		}
-		run.session, err = session.New(req.Lifetime)
-		if err != nil {
-			return err
-		}
-		run.server = server.NewHTTPServer(server.NewSendDirectory(run.session, run.directory))
-		run.heading = fmt.Sprintf("Sharing directory  %s", run.directory.Root().Name())
 
 	case OperationSendText:
 		run.session, err = session.New(req.Lifetime)

@@ -38,6 +38,8 @@ Parses arguments and stdin, maps them to an `app.Request`, routes stdout and
 stderr, handles termination signals, and maps errors to exit codes. Terminal initialization supplies a quit
 notification and restoration function to the application; CLI code implements
 terminal operations but does not decide when to restore the terminal.
+Path sends produce one `OperationSendPaths` request without inspecting the
+filesystem; share decides whether those paths select files or a directory.
 
 ### `internal/app`
 
@@ -69,6 +71,10 @@ OS-networking packages.
 ### `internal/share`
 
 Turns CLI-selected files, directories, and text into validated resources.
+`OpenPaths` checks path combinations before opening either a file collection or
+a single directory, preserving the safety checks in their respective open
+functions. Invalid selections are distinguished from filesystem failures; app
+maps `share.ErrInvalidSelection` to `app.ErrInvalidRequest` for CLI exit code 2.
 Files and directory nodes receive opaque IDs. Directory sessions retain a
 startup-time authorization tree and filesystem identity for each included
 object.

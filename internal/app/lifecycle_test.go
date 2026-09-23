@@ -23,12 +23,12 @@ import (
 func TestApplicationCleanupContinuesAfterErrors(t *testing.T) {
 	a, listener, _, path := newTestApplication(t)
 	var file *share.File
-	a.openCollection = func(paths []string) (*share.Collection, error) {
-		files, err := share.OpenCollection(paths)
-		if err == nil {
+	a.openPaths = func(paths []string) (*share.Collection, *share.Directory, error) {
+		files, directory, err := share.OpenPaths(paths)
+		if files != nil {
 			file = files.Resources()[0].File()
 		}
-		return files, err
+		return files, directory, err
 	}
 	closeErr := errors.New("listener close failed")
 	firewallErr := errors.New("firewall cleanup failed")

@@ -32,8 +32,7 @@ func invalidRequest(err error) error {
 type Operation int
 
 const (
-	OperationSendFile Operation = iota
-	OperationSendDirectory
+	OperationSendPaths Operation = iota
 	OperationSendText
 	OperationReceive
 )

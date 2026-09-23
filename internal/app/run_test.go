@@ -35,7 +35,7 @@ func TestApplicationModes(t *testing.T) {
 			wantPage := "shared.txt"
 			switch mode {
 			case "directory":
-				req.Operation, req.Paths = OperationSendDirectory, []string{filepath.Dir(path)}
+				req.Paths = []string{filepath.Dir(path)}
 			case "text":
 				req.Operation = OperationSendText
 				req.Text, _ = share.NewText([]byte("hello text"))
@@ -143,7 +143,7 @@ func TestApplicationModes(t *testing.T) {
 }
 
 func TestApplicationStartupFailures(t *testing.T) {
-	for _, stage := range []string{"files", "directory", "session", "clipboard", "receive store", "address", "port", "listen", "firewall", "QR", "terminal", "serve"} {
+	for _, stage := range []string{"paths", "session", "clipboard", "receive store", "address", "port", "listen", "firewall", "QR", "terminal", "serve"} {
 		t.Run(stage, func(t *testing.T) {
 			a, listener, _, path := newTestApplication(t)
 			want := errors.New(stage + " failed")
@@ -174,11 +174,8 @@ func TestApplicationStartupFailures(t *testing.T) {
 				return nil, nil, nil
 			}
 			switch stage {
-			case "files":
-				a.openCollection = func([]string) (*share.Collection, error) { return nil, want }
-			case "directory":
-				req.Operation = OperationSendDirectory
-				a.openDirectory = func(string) (*share.Directory, error) { return nil, want }
+			case "paths":
+				a.openPaths = func([]string) (*share.Collection, *share.Directory, error) { return nil, nil, want }
 			case "session":
 				req.Lifetime = 0
 			case "clipboard":
@@ -216,6 +213,18 @@ func TestApplicationStartupFailures(t *testing.T) {
 				t.Error("terminal initialized after startup failure")
 			}
 		})
+	}
+}
+
+func TestApplicationInvalidPathSelection(t *testing.T) {
+	a, _, _, path := newTestApplication(t)
+	a.advertiseEndpoint = func() (network.Endpoint, error) {
+		t.Fatal("network setup started for invalid selection")
+		return network.Endpoint{}, nil
+	}
+	err := a.Run(t.Context(), Request{Paths: []string{path, filepath.Dir(path)}, Lifetime: time.Hour})
+	if !errors.Is(err, ErrInvalidRequest) || !errors.Is(err, share.ErrInvalidSelection) {
+		t.Fatalf("Run() error = %v, want invalid request wrapping invalid selection", err)
 	}
 }
 
@@ -373,12 +382,12 @@ func newTestApplication(t *testing.T) (*Application, *testListener, *bytes.Buffe
 	}
 	a.renderQR = func(io.Writer, string) error { return nil }
 	var file *share.File
-	a.openCollection = func(paths []string) (*share.Collection, error) {
-		files, err := share.OpenCollection(paths)
-		if err == nil {
+	a.openPaths = func(paths []string) (*share.Collection, *share.Directory, error) {
+		files, directory, err := share.OpenPaths(paths)
+		if files != nil {
 			file = files.Resources()[0].File()
 		}
-		return files, err
+		return files, directory, err
 	}
 	t.Cleanup(func() {
 		if file != nil {
