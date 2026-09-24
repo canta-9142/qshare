@@ -3,37 +3,23 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-    utils.url = "github:numtide/flake-utils";
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      utils,
     }:
     let
-      systems = [
+      forAllSystems = nixpkgs.lib.genAttrs [
         "x86_64-linux"
         "aarch64-linux"
       ];
-    in
-    utils.lib.eachSystem systems (
-      system:
-      let
-        pkgs = import nixpkgs { inherit system; };
-        # The locked nixpkgs revision still ships the vulnerable Go 1.26.5.
-        # Keep Nix builds aligned with the patched toolchain used by CI.
-        go = pkgs.go_1_26.overrideAttrs (_: {
-          version = "1.26.6";
-          src = pkgs.fetchurl {
-            url = "https://go.dev/dl/go1.26.6.src.tar.gz";
-            hash = "sha256-oHIcVMaIkBRI13rZs+x+p8R0cwdV/4kTgukuy5P/LLE=";
-          };
-        });
-        buildGoModule = pkgs.buildGoModule.override { inherit go; };
-        packageVersion = "0.6.3";
-        qshare = buildGoModule {
+      pkgsFor = system: nixpkgs.legacyPackages.${system};
+      packageVersion = "0.6.3";
+      mkPackage =
+        pkgs:
+        pkgs.buildGoLatestModule {
           pname = "qshare";
           version = packageVersion;
 
@@ -58,19 +44,28 @@
             platforms = pkgs.lib.platforms.linux;
           };
         };
-      in
-      {
-        packages.default = qshare;
+    in
+    {
+      packages = forAllSystems (system: {
+        default = mkPackage (pkgsFor system);
+      });
 
-        apps.default = {
+      apps = forAllSystems (system: {
+        default = {
           type = "app";
-          program = pkgs.lib.getExe qshare;
+          program = nixpkgs.lib.getExe self.packages.${system}.default;
           meta.description = "Run qshare";
         };
+      });
 
-        checks = {
-          package = qshare;
-          vet = qshare.overrideAttrs (_: {
+      checks = forAllSystems (
+        system:
+        let
+          package = self.packages.${system}.default;
+        in
+        {
+          inherit package;
+          vet = package.overrideAttrs (_: {
             pname = "qshare-vet";
             buildPhase = ''
               runHook preBuild
@@ -84,28 +79,35 @@
               runHook postInstall
             '';
           });
-        };
+        }
+      );
 
-        devShells.default = pkgs.mkShell {
-          packages = [
-            go
-            pkgs.gopls
-            pkgs.gotools
-            pkgs.golangci-lint
-            pkgs.actionlint
-            pkgs.nixfmt
-            pkgs.python3Packages.osc
-          ];
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              pkgs.go_latest
+              pkgs.gopls
+              pkgs.gotools
+              pkgs.golangci-lint
+              pkgs.actionlint
+              pkgs.nixfmt
+            ];
 
-          shellHook = ''
-            export GOPATH="$PWD/.go"
-            export PATH="$GOPATH/bin:$PATH"
-            echo "GOPATH is set to $GOPATH"
-            go version
-          '';
-        };
+            shellHook = ''
+              export GOPATH="$PWD/.go"
+              export PATH="$GOPATH/bin:$PATH"
+              echo "GOPATH is set to $GOPATH"
+              go version
+            '';
+          };
+        }
+      );
 
-        formatter = pkgs.nixfmt;
-      }
-    );
+      formatter = forAllSystems (system: (pkgsFor system).nixfmt);
+    };
 }

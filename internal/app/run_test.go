@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net"
@@ -327,7 +328,7 @@ func TestListenLANFailures(t *testing.T) {
 				addresses[address] = true
 				return nil, tc.listenErr
 			}
-			ln, _, err := a.listenLAN(network.Endpoint{Address: netip.MustParseAddr("127.0.0.1")})
+			ln, _, err := a.listenLAN(network.Endpoint{Address: netip.MustParseAddr("127.0.0.1")}, 0)
 			if err == nil || ln != nil || len(addresses) != tc.attempts {
 				t.Fatalf("listener=%v error=%v attempts=%d", ln, err, len(addresses))
 			}
@@ -340,7 +341,7 @@ func TestListenLANFailures(t *testing.T) {
 
 func TestListenLANBindsSelectedPort(t *testing.T) {
 	a := New(Dependencies{Stderr: io.Discard})
-	listener, port, err := a.listenLAN(network.Endpoint{Address: netip.MustParseAddr("127.0.0.1")})
+	listener, port, err := a.listenLAN(network.Endpoint{Address: netip.MustParseAddr("127.0.0.1")}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,4 +451,47 @@ func localURL(t *testing.T, listener net.Listener, payload string) string {
 	}
 	u.Host = listener.Addr().String()
 	return u.String()
+}
+
+func TestApplicationRequestedPort(t *testing.T) {
+	for _, startErr := range []error{nil, syscall.EADDRINUSE, syscall.EACCES} {
+		t.Run(fmt.Sprint(startErr), func(t *testing.T) {
+			application, listener, stderr, path := newTestApplication(t)
+			application.selectServerPort = func() (uint16, error) {
+				t.Fatal("random selection called for explicit port")
+				return 0, nil
+			}
+			var addresses []string
+			application.listen = func(_, addr string) (net.Listener, error) {
+				addresses = append(addresses, addr)
+				if startErr != nil {
+					return nil, startErr
+				}
+				return listener, nil
+			}
+			var firewallPort uint16
+			closeCalls := 0
+			lease := firewallLeaseFunc(func(context.Context) error {
+				closeCalls++
+				return nil
+			})
+			application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewallLease, error) {
+				firewallPort = rule.Port
+				return lease, nil
+			}
+			err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Millisecond, Port: 8080})
+			if len(addresses) != 1 || addresses[0] != "192.0.2.10:8080" {
+				t.Fatalf("Start addresses = %v", addresses)
+			}
+			if startErr != nil {
+				if !errors.Is(err, startErr) || !strings.Contains(err.Error(), "8080") || firewallPort != 0 || stderr.Len() != 0 {
+					t.Fatalf("error=%v firewall port=%d stderr=%q", err, firewallPort, stderr)
+				}
+				return
+			}
+			if err != nil || firewallPort != 8080 || closeCalls != 1 || !strings.Contains(stderr.String(), "http://192.0.2.10:8080/s/") {
+				t.Fatalf("error=%v firewall port=%d cleanup=%d stderr=%q", err, firewallPort, closeCalls, stderr)
+			}
+		})
+	}
 }

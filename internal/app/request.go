@@ -38,6 +38,8 @@ const (
 )
 
 type Request struct {
+	// Port is the requested TCP port; zero selects a random port.
+	Port       uint16
 	Operation  Operation
 	Paths      []string
 	Text       share.Text

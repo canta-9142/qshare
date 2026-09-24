@@ -27,7 +27,7 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	if err != nil {
 		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
-	port, err := a.startLANServer(ctx, endpoint, &run)
+	port, err := a.startLANServer(ctx, endpoint, &run, req.Port)
 	if err != nil {
 		return fmt.Errorf("failed to start server: %w", err)
 	}

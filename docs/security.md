@@ -93,7 +93,8 @@ the behavior of that program; qshare does not execute received text.
 ## Network boundary
 
 The server binds to the selected LAN IPv4 address on a random TCP port from
-`50000`–`59999`. On supported systems, qshare adds a temporary firewall rule
+`50000`–`59999` by default, or the port explicitly selected with `--port`
+(`1`–`65535`). On supported systems, qshare adds a temporary firewall rule
 limited to the selected interface, source subnet, destination address, and
 port. HTTPS, Direct Mode, captive portals, and automatic hotspot cleanup are
 not part of the current implementation.

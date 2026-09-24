@@ -25,24 +25,36 @@ func randomServerPort() (uint16, error) {
 }
 
 // listenLAN reserves a port before firewall setup or HTTP serving begins.
-func (a *Application) listenLAN(endpoint network.Endpoint) (net.Listener, uint16, error) {
-	initialPort, err := a.selectServerPort()
-	if err != nil {
-		return nil, 0, err
-	}
-	if initialPort < minimumServerPort || initialPort >= minimumServerPort+serverPortCount {
-		return nil, 0, fmt.Errorf("selected server port %d is outside the configured range", initialPort)
+func (a *Application) listenLAN(endpoint network.Endpoint, requestedPort uint16) (net.Listener, uint16, error) {
+	initialPort := requestedPort
+	attempts := 1
+	var err error
+	if requestedPort == 0 {
+		initialPort, err = a.selectServerPort()
+		if err != nil {
+			return nil, 0, err
+		}
+		if initialPort < minimumServerPort || initialPort >= minimumServerPort+serverPortCount {
+			return nil, 0, fmt.Errorf("selected server port %d is outside the configured range", initialPort)
+		}
+		attempts = serverPortAttempts
 	}
 
 	// A random starting point keeps normal selection unpredictable. Advancing
 	// within the range guarantees that collision retries do not repeat a port.
-	for attempt := 0; attempt < serverPortAttempts; attempt++ {
-		port := minimumServerPort + (int(initialPort)-minimumServerPort+attempt)%serverPortCount
+	for attempt := 0; attempt < attempts; attempt++ {
+		port := int(initialPort)
+		if requestedPort == 0 {
+			port = minimumServerPort + (port-minimumServerPort+attempt)%serverPortCount
+		}
 		bindAddr := net.JoinHostPort(endpoint.Address.String(), strconv.FormatUint(uint64(port), 10))
 		var listener net.Listener
 		listener, err = a.listen("tcp", bindAddr)
 		if err == nil {
 			return listener, uint16(port), nil
+		}
+		if requestedPort != 0 {
+			return nil, 0, fmt.Errorf("listen on port %d: %w", requestedPort, err)
 		}
 		if !errors.Is(err, syscall.EADDRINUSE) {
 			return nil, 0, fmt.Errorf("listen: %w", err)
@@ -57,8 +69,8 @@ func (a *Application) listenLAN(endpoint network.Endpoint) (net.Listener, uint16
 	)
 }
 
-func (a *Application) startLANServer(ctx context.Context, endpoint network.Endpoint, run *sessionRun) (uint16, error) {
-	listener, port, err := a.listenLAN(endpoint)
+func (a *Application) startLANServer(ctx context.Context, endpoint network.Endpoint, run *sessionRun, requestedPort uint16) (uint16, error) {
+	listener, port, err := a.listenLAN(endpoint, requestedPort)
 	if err != nil {
 		return 0, err
 	}
