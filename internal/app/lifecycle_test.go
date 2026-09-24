@@ -49,6 +49,10 @@ func TestApplicationCleanupContinuesAfterErrors(t *testing.T) {
 	quit := make(chan struct{})
 	close(quit)
 	a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+		// Ensure Serve owns the listener before testing Shutdown's close error.
+		if err := awaitRun(t, startTestRequest(listener)); err != nil {
+			t.Fatalf("HTTP server did not start: %v", err)
+		}
 		return quit, func() error {
 			assertFileClosed(t, file)
 			events = append(events, "terminal")
