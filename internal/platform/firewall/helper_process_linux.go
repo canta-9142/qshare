@@ -111,8 +111,7 @@ func (l *processHelperLauncher) start(
 	select {
 	case line := <-ready:
 		if line != wantReady {
-			_ = stdin.Close()
-			err := <-done
+			err := errors.Join(stopStartingHelper(cmd, stdin, done), ctx.Err())
 			return nil, helperProcessError("firewall helper did not become ready", err, stderr.String())
 		}
 		return &processLease{stdin: stdin, done: done, stderr: stderr}, nil
@@ -121,15 +120,28 @@ func (l *processHelperLauncher) start(
 		return nil, helperProcessError("firewall helper exited before becoming ready", err, stderr.String())
 
 	case <-ctx.Done():
-		_ = stdin.Close()
-		_ = cmd.Process.Signal(os.Interrupt)
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			_ = cmd.Process.Kill()
-		}
+		_ = stopStartingHelper(cmd, stdin, done)
 		return nil, ctx.Err()
 	}
+}
+
+// stopStartingHelper bounds shutdown after a failed or canceled startup.
+func stopStartingHelper(cmd *exec.Cmd, stdin io.Closer, done <-chan error) error {
+	_ = stdin.Close()
+	_ = cmd.Process.Signal(os.Interrupt)
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	var err error
+	select {
+	case err = <-done:
+		return err
+	case <-timer.C:
+		err = errors.New("firewall helper shutdown timed out")
+	}
+	if killErr := cmd.Process.Kill(); killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+		err = errors.Join(err, fmt.Errorf("kill firewall helper: %w", killErr))
+	}
+	return err
 }
 
 // privilegedCommand selects direct execution, pkexec, or sudo as appropriate.

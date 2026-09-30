@@ -165,6 +165,11 @@ expiration drain or blocked text output. `Run` receives the restoration result
 before returning and includes any error in its result.
 Reusable packages return errors instead of logging.
 
+If privileged firewall helper startup fails, qshare closes its input and sends
+SIGINT. It gives the helper at most one second to exit, including when startup is
+canceled, then attempts to kill the process without waiting indefinitely. Unexpected
+readiness responses retain helper diagnostics in the startup error.
+
 ## Design constraints
 
 - Prefer the Go standard library where practical.

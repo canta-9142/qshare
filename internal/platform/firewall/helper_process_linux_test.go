@@ -3,14 +3,76 @@
 package firewall
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestHelperStartupFailureStopsWaiting(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "helper")
+	// The finite lifetime also cleans up the process if startup regresses.
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\ntrap '' INT\necho diagnostic >&2\necho 'READY wrong'\nexec sleep 2\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	launcher := &processHelperLauncher{
+		executable: func() (string, error) { return executable, nil },
+		effective:  func() int { return 0 },
+	}
+	_, err := launcher.start(context.Background(), nixOSNFTablesBackend, testRule())
+	if err == nil || !strings.Contains(err.Error(), "shutdown timed out") || !strings.Contains(err.Error(), "diagnostic") {
+		t.Fatalf("start() error = %v, want shutdown timeout with diagnostics", err)
+	}
+}
+
+func TestStopStartingHelper(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		ending      string
+		wantTimeout bool
+	}{
+		{"graceful cleanup", "cat >/dev/null; echo cleaned >&2", false},
+		{"unresponsive helper", "exec sleep 30", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command("sh", "-c", "trap '' INT; echo READY; "+tt.ending)
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			stderr := &lockedBuffer{}
+			cmd.Stderr = stderr
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait(); close(done) }()
+			t.Cleanup(func() { _ = cmd.Process.Kill(); <-done })
+			// Wait until signal handling is installed before requesting shutdown.
+			if line, err := bufio.NewReader(stdout).ReadString('\n'); err != nil || line != "READY\n" {
+				t.Fatalf("helper readiness = %q, %v", line, err)
+			}
+			err = stopStartingHelper(cmd, stdin, done)
+			if tt.wantTimeout {
+				if err == nil || !strings.Contains(err.Error(), "shutdown timed out") {
+					t.Fatalf("stopStartingHelper() error = %v, want timeout", err)
+				}
+			} else if err != nil || stderr.String() != "cleaned" {
+				t.Fatalf("stopStartingHelper() = %v, stderr = %q; want successful cleanup", err, stderr.String())
+			}
+		})
+	}
+}
 
 func TestPrivilegedCommandUsesSetuidRootPKExec(t *testing.T) {
 	runner := &fakeHelperRunner{paths: map[string]string{
