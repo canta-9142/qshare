@@ -3,6 +3,7 @@ package share
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -97,9 +98,13 @@ func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory
 }
 
 func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *int, makeID func() (ResourceID, error)) error {
-	items, err := dir.ReadDir(-1)
-	if err != nil {
+	remaining := MaxDirectoryEntries - *entries
+	items, err := dir.ReadDir(remaining + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("read directory %q: %w", strings.Join(parent.rel, string(filepath.Separator)), err)
+	}
+	if len(items) > remaining {
+		return fmt.Errorf("directory contains too many entries: maximum is %d", MaxDirectoryEntries)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name() < items[j].Name() })
 	for _, item := range items {

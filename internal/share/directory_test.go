@@ -137,11 +137,41 @@ func TestOpenDirectoryFileLimit(t *testing.T) {
 
 func TestOpenDirectoryEntryLimitCountsExcludedEntries(t *testing.T) {
 	root := t.TempDir()
-	for i := 0; i <= MaxDirectoryEntries; i++ {
+	for i := 0; i < MaxDirectoryEntries; i++ {
 		mustWrite(t, filepath.Join(root, fmt.Sprintf(".%04d", i)), "")
 	}
+	d, err := OpenDirectory(root)
+	if err != nil {
+		t.Fatalf("boundary rejected: %v", err)
+	}
+	_ = d.Close()
+	mustWrite(t, filepath.Join(root, ".extra"), "")
 	if _, err := OpenDirectory(root); err == nil {
 		t.Fatal("entry count above limit accepted")
+	}
+}
+
+func TestDirectoryWalkLimitsReadToRemainingEntries(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{".a", ".b", ".c"} {
+		mustWrite(t, filepath.Join(root, name), "")
+	}
+	dir, err := os.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	files, entries := 0, MaxDirectoryEntries-1
+	d := &Directory{}
+	if err := d.walk(dir, &Node{}, 0, &files, &entries, newResourceID); err == nil {
+		t.Fatal("entry count above remaining limit accepted")
+	}
+	unread, err := dir.ReadDir(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unread) != 1 {
+		t.Fatalf("unread entries = %d, want 1", len(unread))
 	}
 }
 
