@@ -375,8 +375,8 @@ func TestParseTextOptionAcceptsHyphenPrefixedValue(t *testing.T) {
 func TestRunRejectsInvalidTextAsUsageError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	if got := Run([]string{"--text", strings.Repeat("x", 1<<20+1)}, &stdout, &stderr); got != 2 {
-		t.Fatalf("Run() = %d, want 2", got)
+	if got := runWithInput([]string{"--text", strings.Repeat("x", 1<<20+1)}, nil, true, &stdout, &stderr); got != 2 {
+		t.Fatalf("runWithInput() = %d, want 2", got)
 	}
 	if !strings.Contains(stderr.String(), "1 MiB") {
 		t.Errorf("stderr = %q, want size-limit diagnostic", stderr.String())
@@ -544,8 +544,8 @@ func TestRunMapsErrorsToExitCodes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
-			if got := Run(tt.argv, &stdout, &stderr); got != tt.wantCode {
-				t.Fatalf("Run() = %d, want %d", got, tt.wantCode)
+			if got := runWithInput(tt.argv, nil, true, &stdout, &stderr); got != tt.wantCode {
+				t.Fatalf("runWithInput() = %d, want %d", got, tt.wantCode)
 			}
 			if stdout.Len() != 0 {
 				t.Errorf("stdout = %q, want empty", stdout.String())
@@ -631,11 +631,19 @@ func TestInvalidPortExitsWithUsageError(t *testing.T) {
 		{"--port", "1.5"}, {"--port="}, {"--port"},
 	} {
 		var stdout, stderr bytes.Buffer
-		if code := Run(argv, &stdout, &stderr); code != 2 {
-			t.Fatalf("Run(%v) = %d, want 2", argv, code)
+		if code := runWithInput(argv, nil, true, &stdout, &stderr); code != 2 {
+			t.Fatalf("runWithInput(%v) = %d, want 2", argv, code)
 		}
 		if stdout.Len() != 0 || stderr.Len() == 0 {
-			t.Fatalf("Run(%v): stdout=%q stderr=%q", argv, &stdout, &stderr)
+			t.Fatalf("runWithInput(%v): stdout=%q stderr=%q", argv, &stdout, &stderr)
 		}
 	}
+}
+
+func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
+	return parseWithInput(argv, stdinInput{terminal: true}, developmentVersion, stdout, stderr)
+}
+
+func mapArguments(args arguments) (parseResult, error) {
+	return mapArgumentsWithInput(args, stdinInput{terminal: true})
 }

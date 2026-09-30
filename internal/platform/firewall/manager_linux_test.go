@@ -51,3 +51,20 @@ func TestManagerStopsAfterBackendFailure(t *testing.T) {
 		t.Fatalf("second backend calls = %d, want 0", second.calls)
 	}
 }
+
+func TestManagerReturnsNoopWhenNoBackendHandlesRule(t *testing.T) {
+	first, second := &fakeBackend{}, &fakeBackend{}
+	lease, err := (&manager{backends: []backend{first, second}}).open(context.Background(), testRule())
+	if err != nil {
+		t.Fatalf("open() error = %v", err)
+	}
+	if _, ok := lease.(noopLease); !ok {
+		t.Fatalf("open() lease = %T, want noopLease", lease)
+	}
+	if err := lease.Close(context.Background()); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if first.calls != 1 || second.calls != 1 {
+		t.Fatalf("backend calls = %d, %d; want 1, 1", first.calls, second.calls)
+	}
+}

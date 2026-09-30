@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,8 +54,8 @@ func TestRunPathSelectionExitCodes(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			if code := Run(tt.paths, &stdout, &stderr); code != tt.code {
-				t.Fatalf("Run() = %d, want %d; stderr=%q", code, tt.code, stderr.String())
+			if code := runWithInput(tt.paths, nil, true, &stdout, &stderr); code != tt.code {
+				t.Fatalf("runWithInput() = %d, want %d; stderr=%q", code, tt.code, stderr.String())
 			}
 			if stdout.Len() != 0 || !strings.Contains(stderr.String(), tt.diagnostic) {
 				t.Fatalf("stdout=%q stderr=%q, want diagnostic %q on stderr only", stdout.String(), stderr.String(), tt.diagnostic)
@@ -153,4 +154,40 @@ func (l *fakeTerminalQuitListener) Quit() <-chan struct{} {
 func (l *fakeTerminalQuitListener) Close() error {
 	l.closeCalls++
 	return l.closeErr
+}
+
+func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout io.Writer, stderr io.Writer) int {
+	return runWithInputAndQuitListener(argv, developmentVersion, stdin, stdinIsTerminal, stdout, stderr, nil)
+}
+
+func TestRunWithStdin(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		argv   []string
+		code   int
+		stdout string
+		stderr string
+	}{
+		{name: "help", argv: []string{"--help"}, stdout: "Usage: qshare"},
+		{name: "version", argv: []string{"--version"}, stdout: "qshare test-version\n"},
+		{name: "piped input conflict", argv: []string{"file.txt"}, code: 2, stderr: "piped stdin"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			stdin, err := os.Open(os.DevNull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stdin.Close()
+			var stdout, stderr bytes.Buffer
+			if code := RunWithStdin(tt.argv, "test-version", stdin, &stdout, &stderr); code != tt.code {
+				t.Fatalf("RunWithStdin() = %d, want %d; stderr=%q", code, tt.code, &stderr)
+			}
+			if (tt.stdout == "" && stdout.Len() != 0) || !strings.Contains(stdout.String(), tt.stdout) {
+				t.Fatalf("stdout = %q, want %q", &stdout, tt.stdout)
+			}
+			if (tt.stderr == "" && stderr.Len() != 0) || !strings.Contains(stderr.String(), tt.stderr) {
+				t.Fatalf("stderr = %q, want %q", &stderr, tt.stderr)
+			}
+		})
+	}
 }

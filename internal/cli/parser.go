@@ -22,10 +22,6 @@ type parseResult struct {
 	Code    int
 }
 
-func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
-	return parseWithInput(argv, stdinInput{terminal: true}, developmentVersion, stdout, stderr)
-}
-
 type stdinInput struct {
 	reader   io.Reader
 	terminal bool
@@ -80,10 +76,6 @@ func normalizeTextArguments(argv []string) []string {
 		}
 	}
 	return normalized
-}
-
-func mapArguments(args arguments) (parseResult, error) {
-	return mapArgumentsWithInput(args, stdinInput{terminal: true})
 }
 
 func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error) {

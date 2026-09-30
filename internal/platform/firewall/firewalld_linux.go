@@ -69,15 +69,6 @@ type firewalldLease struct {
 	err  error
 }
 
-// open preserves the standalone firewalld behavior used by focused tests.
-func (f *firewalld) open(ctx context.Context, rule Rule) (Lease, error) {
-	lease, handled, err := f.tryOpen(ctx, rule)
-	if err != nil || handled {
-		return lease, err
-	}
-	return noopLease{}, nil
-}
-
 // tryOpen installs a rich rule when firewalld is present and running.
 func (f *firewalld) tryOpen(ctx context.Context, rule Rule) (Lease, bool, error) {
 	executable, err := f.runner.lookPath("firewall-cmd")

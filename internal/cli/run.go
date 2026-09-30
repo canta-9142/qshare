@@ -10,10 +10,6 @@ import (
 	"github.com/canta-9142/qshare/internal/app"
 )
 
-func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
-	return runWithInputAndQuitListener(argv, developmentVersion, nil, true, stdout, stderr, nil)
-}
-
 func RunWithStdin(argv []string, version string, stdin *os.File, stdout io.Writer, stderr io.Writer) int {
 	stdinIsTerminal := isTerminal(stdin)
 	var startQuitListener quitListenerStarter
@@ -23,10 +19,6 @@ func RunWithStdin(argv []string, version string, stdin *os.File, stdout io.Write
 		}
 	}
 	return runWithInputAndQuitListener(argv, version, stdin, stdinIsTerminal, stdout, stderr, startQuitListener)
-}
-
-func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout io.Writer, stderr io.Writer) int {
-	return runWithInputAndQuitListener(argv, developmentVersion, stdin, stdinIsTerminal, stdout, stderr, nil)
 }
 
 type terminalQuitListener interface {

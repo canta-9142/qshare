@@ -60,32 +60,38 @@ func testRule() Rule {
 	}
 }
 
-func TestFirewalldUnavailableIsNoop(t *testing.T) {
+func TestFirewalldUnavailableIsUnhandled(t *testing.T) {
 	runner := &fakeRunner{lookErr: exec.ErrNotFound}
-	lease, err := (&firewalld{runner: runner}).open(context.Background(), testRule())
-	if err != nil {
-		t.Fatalf("open() error = %v", err)
+	lease, handled, err := (&firewalld{runner: runner}).tryOpen(context.Background(), testRule())
+	if handled {
+		t.Fatal("tryOpen() handled = true, want false")
 	}
-	if err := lease.Close(context.Background()); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if lease != nil {
+		t.Fatalf("tryOpen() lease = %v, want nil", lease)
+	}
+	if err != nil {
+		t.Fatalf("tryOpen() error = %v", err)
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("command calls = %v, want none", runner.calls)
 	}
 }
 
-func TestStoppedFirewalldIsNoop(t *testing.T) {
+func TestStoppedFirewalldIsUnhandled(t *testing.T) {
 	runner := &fakeRunner{results: []commandResult{{
 		output:   "not running",
 		exitCode: 252,
 		err:      errors.New("exit status 252"),
 	}}}
-	lease, err := (&firewalld{runner: runner}).open(context.Background(), testRule())
-	if err != nil {
-		t.Fatalf("open() error = %v", err)
+	lease, handled, err := (&firewalld{runner: runner}).tryOpen(context.Background(), testRule())
+	if handled {
+		t.Fatal("tryOpen() handled = true, want false")
 	}
-	if err := lease.Close(context.Background()); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if lease != nil {
+		t.Fatalf("tryOpen() lease = %v, want nil", lease)
+	}
+	if err != nil {
+		t.Fatalf("tryOpen() error = %v", err)
 	}
 	if len(runner.calls) != 1 || !slices.Equal(runner.calls[0].args, []string{"--state"}) {
 		t.Fatalf("calls = %#v", runner.calls)
@@ -101,9 +107,12 @@ func TestFirewalldAddsAndRemovesScopedTemporaryRule(t *testing.T) {
 		{},
 	}}
 	manager := &firewalld{runner: runner}
-	lease, err := manager.open(context.Background(), testRule())
+	lease, handled, err := manager.tryOpen(context.Background(), testRule())
+	if !handled {
+		t.Fatal("tryOpen() handled = false, want true")
+	}
 	if err != nil {
-		t.Fatalf("open() error = %v", err)
+		t.Fatalf("tryOpen() error = %v", err)
 	}
 	if err := lease.Close(context.Background()); err != nil {
 		t.Fatalf("Close() error = %v", err)
@@ -138,9 +147,12 @@ func TestFirewalldUsesDefaultZoneForUnboundInterface(t *testing.T) {
 		{output: "public"},
 		{output: "yes"},
 	}}
-	lease, err := (&firewalld{runner: runner}).open(context.Background(), testRule())
+	lease, handled, err := (&firewalld{runner: runner}).tryOpen(context.Background(), testRule())
+	if !handled {
+		t.Fatal("tryOpen() handled = false, want true")
+	}
 	if err != nil {
-		t.Fatalf("open() error = %v", err)
+		t.Fatalf("tryOpen() error = %v", err)
 	}
 	if err := lease.Close(context.Background()); err != nil {
 		t.Fatalf("Close() error = %v", err)
@@ -159,9 +171,12 @@ func TestFirewalldDoesNotFallBackAfterZoneQueryFailure(t *testing.T) {
 		{output: "running"},
 		{output: "DBUS_ERROR", exitCode: 1, err: want},
 	}}
-	_, err := (&firewalld{runner: runner}).open(context.Background(), testRule())
+	_, handled, err := (&firewalld{runner: runner}).tryOpen(context.Background(), testRule())
+	if !handled {
+		t.Fatal("tryOpen() handled = false, want true")
+	}
 	if !errors.Is(err, want) {
-		t.Fatalf("open() error = %v, want zone query error", err)
+		t.Fatalf("tryOpen() error = %v, want zone query error", err)
 	}
 	if len(runner.calls) != 2 {
 		t.Fatalf("command calls = %d, want 2", len(runner.calls))
@@ -174,9 +189,12 @@ func TestFirewalldDoesNotRemovePreexistingRule(t *testing.T) {
 		{output: "home"},
 		{output: "yes"},
 	}}
-	lease, err := (&firewalld{runner: runner}).open(context.Background(), testRule())
+	lease, handled, err := (&firewalld{runner: runner}).tryOpen(context.Background(), testRule())
+	if !handled {
+		t.Fatal("tryOpen() handled = false, want true")
+	}
 	if err != nil {
-		t.Fatalf("open() error = %v", err)
+		t.Fatalf("tryOpen() error = %v", err)
 	}
 	if err := lease.Close(context.Background()); err != nil {
 		t.Fatalf("Close() error = %v", err)
@@ -195,12 +213,15 @@ func TestFirewalldReportsAddFailure(t *testing.T) {
 		{output: "AUTH_FAILED", exitCode: 1, err: want},
 		{output: "no", exitCode: 1, err: errors.New("exit status 1")},
 	}}
-	_, err := (&firewalld{runner: runner}).open(context.Background(), testRule())
+	_, handled, err := (&firewalld{runner: runner}).tryOpen(context.Background(), testRule())
+	if !handled {
+		t.Fatal("tryOpen() handled = false, want true")
+	}
 	if !errors.Is(err, want) {
-		t.Fatalf("open() error = %v, want authorization error", err)
+		t.Fatalf("tryOpen() error = %v, want authorization error", err)
 	}
 	if !strings.Contains(err.Error(), "AUTH_FAILED") {
-		t.Fatalf("open() error = %v, want command output", err)
+		t.Fatalf("tryOpen() error = %v, want command output", err)
 	}
 }
 
