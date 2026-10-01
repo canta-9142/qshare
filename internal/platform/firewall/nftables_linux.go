@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -119,37 +118,26 @@ func (l *nftablesLease) Close(ctx context.Context) error {
 	return errors.Join(ruleErr, setErr)
 }
 
-// nftRuleHandle extracts the owned rule handle from nft JSON output.
+// nftRuleHandle extracts the owned rule handle from nft --json --echo output.
+// Only nftables[].add.rule is supported; unrelated objects are ignored.
 func nftRuleHandle(output, comment string) (uint64, bool) {
-	decoder := json.NewDecoder(strings.NewReader(output))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
+	var response struct {
+		NFTables []struct {
+			Add struct {
+				Rule struct {
+					Comment string  `json:"comment"`
+					Handle  *uint64 `json:"handle"`
+				} `json:"rule"`
+			} `json:"add"`
+		} `json:"nftables"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
 		return 0, false
 	}
-	return findNFTRuleHandle(value, comment)
-}
-
-// findNFTRuleHandle recursively finds a rule with the expected ownership comment.
-func findNFTRuleHandle(value any, comment string) (uint64, bool) {
-	switch current := value.(type) {
-	case []any:
-		for _, item := range current {
-			if handle, ok := findNFTRuleHandle(item, comment); ok {
-				return handle, true
-			}
-		}
-	case map[string]any:
-		if currentComment, _ := current["comment"].(string); currentComment == comment {
-			if number, ok := current["handle"].(json.Number); ok {
-				handle, err := strconv.ParseUint(number.String(), 10, 64)
-				return handle, err == nil
-			}
-		}
-		for _, item := range current {
-			if handle, ok := findNFTRuleHandle(item, comment); ok {
-				return handle, true
-			}
+	for _, item := range response.NFTables {
+		rule := item.Add.Rule
+		if rule.Comment == comment && rule.Handle != nil {
+			return *rule.Handle, true
 		}
 	}
 	return 0, false
