@@ -19,22 +19,21 @@ func (s *fileHandler) archive(w http.ResponseWriter, r *http.Request) {
 	used := make(map[string]struct{})
 	for _, resource := range s.files.Resources() {
 		if err := r.Context().Err(); err != nil {
-			_ = zw.Close()
-			return
+			panic(http.ErrAbortHandler)
 		}
 		header := &zip.FileHeader{Name: uniqueArchiveName(resource.Name(), used), Method: zip.Deflate}
 		header.SetModTime(resource.File().ModTime())
 		entry, err := zw.CreateHeader(header)
 		if err != nil {
-			_ = zw.Close()
-			return
+			panic(http.ErrAbortHandler)
 		}
 		if err := copyWithContext(r.Context(), entry, resource.File().Reader()); err != nil {
-			_ = zw.Close()
-			return
+			panic(http.ErrAbortHandler)
 		}
 	}
-	_ = zw.Close()
+	if err := zw.Close(); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func uniqueArchiveName(name string, used map[string]struct{}) string {

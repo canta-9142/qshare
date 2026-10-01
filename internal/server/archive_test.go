@@ -60,6 +60,106 @@ func TestCopyWithContextStopsOnCancellation(t *testing.T) {
 	}
 }
 
+func assertArchiveAborts(t *testing.T, serve func()) {
+	t.Helper()
+	defer func() {
+		if got := recover(); got != http.ErrAbortHandler {
+			t.Fatalf("panic = %v, want http.ErrAbortHandler", got)
+		}
+	}()
+	serve()
+}
+
+func TestArchiveAbortsOnCancellation(t *testing.T) {
+	server, sess := newMultiFileTestServer(t, []string{"file"}, []string{"content"})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil).WithContext(ctx)
+	assertArchiveAborts(t, func() { server.ServeHTTP(recorder, req) })
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("cancelled archive wrote %d bytes", recorder.Body.Len())
+	}
+}
+
+func TestArchivesAbortOnFinalizationFailure(t *testing.T) {
+	files, fileSession := newMultiFileTestServer(t, []string{"file"}, []string{"content"})
+	directory, directorySession, _ := newDirectoryTestServer(t, t.TempDir())
+	for _, tc := range []struct {
+		name    string
+		handler http.Handler
+		token   string
+	}{
+		{"files", files, fileSession.Token().String()},
+		{"directory", directory, directorySession.Token().String()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writer := &failingArchiveResponse{ResponseRecorder: httptest.NewRecorder()}
+			assertArchiveAborts(t, func() {
+				tc.handler.ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/z/"+tc.token, nil))
+			})
+			if writer.writes != 1 {
+				t.Fatalf("writes = %d, want one buffered write during Close", writer.writes)
+			}
+		})
+	}
+}
+
+type failingArchiveResponse struct {
+	*httptest.ResponseRecorder
+	writes int
+}
+
+func (w *failingArchiveResponse) Write([]byte) (int, error) {
+	w.writes++
+	return 0, io.ErrClosedPipe
+}
+
+func TestArchiveFailuresInterruptHTTPTransfer(t *testing.T) {
+	for _, mode := range []string{"files", "directory"} {
+		t.Run(mode, func(t *testing.T) {
+			var handler http.Handler
+			var token string
+			if mode == "files" {
+				server, sess := newMultiFileTestServer(t, []string{"first", "second"}, []string{"one", "two"})
+				if err := server.files.Resources()[1].File().Close(); err != nil {
+					t.Fatal(err)
+				}
+				handler, token = server, sess.Token().String()
+			} else {
+				root := t.TempDir()
+				file := filepath.Join(root, "file")
+				if err := os.WriteFile(file, []byte("content"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				server, sess, _ := newDirectoryTestServer(t, root)
+				if err := os.Remove(file); err != nil {
+					t.Fatal(err)
+				}
+				handler, token = server, sess.Token().String()
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Commit the response to exercise failure after HTTP streaming starts.
+				w.(http.Flusher).Flush()
+				handler.ServeHTTP(w, r)
+			}))
+			defer server.Close()
+			response, err := server.Client().Get(server.URL + "/z/" + token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != io.ErrUnexpectedEOF {
+				t.Fatalf("read error = %v, want unexpected EOF", err)
+			}
+			if _, err := zip.NewReader(bytes.NewReader(body), int64(len(body))); err == nil {
+				t.Fatal("failed archive was finalized")
+			}
+		})
+	}
+}
+
 func TestArchiveSupportsConcurrentDownloads(t *testing.T) {
 	server, sess := newMultiFileTestServer(t, []string{"one.txt", "two.txt"}, []string{"one", "two"})
 	var wg sync.WaitGroup

@@ -36,6 +36,9 @@ finishes before the server starts.
 - Duplicate filenames do not merge authorization.
 - ZIP entry names are sanitized and cannot be absolute or contain traversal.
 - Files and archives are streamed and stop on request cancellation.
+- ZIP archives are finalized only after every entry succeeds. Generation or
+  finalization failures abort the HTTP transfer so an incomplete archive is not
+  reported as a successful download.
 
 ## Shared directories
 

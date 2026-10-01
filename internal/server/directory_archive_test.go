@@ -23,7 +23,7 @@ func TestDirectoryArchiveCancellationStopsGeneration(t *testing.T) {
 	cancel()
 	req := httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil).WithContext(ctx)
 	recorder := httptest.NewRecorder()
-	srv.ServeHTTP(recorder, req)
+	assertArchiveAborts(t, func() { srv.ServeHTTP(recorder, req) })
 	if recorder.Body.Len() > 1024 {
 		t.Fatalf("cancelled archive wrote %d bytes", recorder.Body.Len())
 	}
@@ -92,10 +92,11 @@ func TestDirectoryArchiveRejectsChangedTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder := httptest.NewRecorder()
-	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
-	zr, err := zip.NewReader(bytes.NewReader(recorder.Body.Bytes()), int64(recorder.Body.Len()))
-	if err == nil && len(zr.File) > 1 {
-		t.Fatal("changed tree was included in archive")
+	assertArchiveAborts(t, func() {
+		srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	})
+	if _, err := zip.NewReader(bytes.NewReader(recorder.Body.Bytes()), int64(recorder.Body.Len())); err == nil {
+		t.Fatal("failed archive was finalized")
 	}
 }
 

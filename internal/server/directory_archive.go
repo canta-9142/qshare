@@ -19,10 +19,11 @@ func (s *directoryHandler) directoryArchive(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	zw := zip.NewWriter(w)
 	if err := s.writeDirectoryArchive(r.Context(), zw, root, root.Name()); err != nil {
-		_ = zw.Close()
-		return
+		panic(http.ErrAbortHandler)
 	}
-	_ = zw.Close()
+	if err := zw.Close(); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (s *directoryHandler) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node *share.Node, archivePath string) error {
