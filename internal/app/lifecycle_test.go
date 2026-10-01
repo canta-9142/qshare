@@ -39,7 +39,7 @@ func TestApplicationCleanupContinuesAfterErrors(t *testing.T) {
 		assertFileOpen(t, file)
 		events = append(events, "HTTP")
 	}
-	a.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
+	a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) {
 		return firewallLeaseFunc(func(context.Context) error {
 			assertFileOpen(t, file)
 			events = append(events, "firewall")

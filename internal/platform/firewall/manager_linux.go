@@ -9,11 +9,6 @@ type backend interface {
 	tryOpen(context.Context, Rule) (Lease, bool, error)
 }
 
-// manager selects the first available backend in priority order.
-type manager struct {
-	backends []backend
-}
-
 // open validates a rule and constructs the default Linux backend chain.
 func open(ctx context.Context, rule Rule) (Lease, error) {
 	if err := validateRule(rule); err != nil {
@@ -23,15 +18,15 @@ func open(ctx context.Context, rule Rule) (Lease, error) {
 		return nil, err
 	}
 	runner := execRunner{}
-	return (&manager{backends: []backend{
+	return openBackends(ctx, rule, []backend{
 		&firewalld{runner: runner},
 		newNixOSBackend(runner),
-	}}).open(ctx, rule)
+	})
 }
 
-// open walks configured backends until one handles the rule.
-func (m *manager) open(ctx context.Context, rule Rule) (Lease, error) {
-	for _, candidate := range m.backends {
+// openBackends walks configured backends until one handles the rule.
+func openBackends(ctx context.Context, rule Rule, backends []backend) (Lease, error) {
+	for _, candidate := range backends {
 		lease, handled, err := candidate.tryOpen(ctx, rule)
 		if err != nil {
 			return nil, err

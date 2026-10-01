@@ -152,7 +152,7 @@ func TestApplicationStartupFailures(t *testing.T) {
 			bound, firewallOpened, terminalStarted := false, false, false
 			a.listen = func(string, string) (net.Listener, error) { bound = true; return listener, nil }
 			firewallClosed := false
-			a.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
+			a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) {
 				firewallOpened = true
 				return firewallLeaseFunc(func(ctx context.Context) error {
 					select {
@@ -192,7 +192,7 @@ func TestApplicationStartupFailures(t *testing.T) {
 			case "listen":
 				a.listen = func(string, string) (net.Listener, error) { return nil, want }
 			case "firewall":
-				a.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) { return nil, want }
+				a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) { return nil, want }
 			case "QR":
 				a.renderQR = func(io.Writer, string) error { return want }
 			case "terminal":
@@ -278,7 +278,7 @@ func TestApplicationRetriesPortAndUsesSelectedPort(t *testing.T) {
 		return listener, nil
 	}
 	var rule firewall.Rule
-	a.openFirewall = func(_ context.Context, got firewall.Rule) (firewallLease, error) {
+	a.openFirewall = func(_ context.Context, got firewall.Rule) (firewall.Lease, error) {
 		rule = got
 		return firewallLeaseFunc(func(context.Context) error { return nil }), nil
 	}
@@ -378,7 +378,7 @@ func newTestApplication(t *testing.T) (*Application, *testListener, *bytes.Buffe
 	}
 	a.selectServerPort = func() (uint16, error) { return 55544, nil }
 	a.listen = func(string, string) (net.Listener, error) { return listener, nil }
-	a.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
+	a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) {
 		return firewallLeaseFunc(func(context.Context) error { return nil }), nil
 	}
 	a.renderQR = func(io.Writer, string) error { return nil }
@@ -475,7 +475,7 @@ func TestApplicationRequestedPort(t *testing.T) {
 				closeCalls++
 				return nil
 			})
-			application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewallLease, error) {
+			application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewall.Lease, error) {
 				firewallPort = rule.Port
 				return lease, nil
 			}

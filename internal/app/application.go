@@ -25,18 +25,13 @@ const (
 	firewallTimeoutSlack   = 5 * time.Second
 )
 
-// firewallLease is the application-facing subset of a temporary firewall lease.
-type firewallLease interface {
-	Close(context.Context) error
-}
-
 type Application struct {
 	stderr                io.Writer
 	stdout                io.Writer
 	startShutdownListener func() (<-chan struct{}, func() error, error)
 	advertiseEndpoint     func() (network.Endpoint, error)
 	selectServerPort      func() (uint16, error)
-	openFirewall          func(context.Context, firewall.Rule) (firewallLease, error)
+	openFirewall          func(context.Context, firewall.Rule) (firewall.Lease, error)
 	listen                func(string, string) (net.Listener, error)
 	openReceiveStore      func(string) (*receive.Store, error)
 	newClipboardSink      func(string) (receive.TextSink, error)
@@ -64,11 +59,9 @@ func New(deps Dependencies) *Application {
 		startShutdownListener: deps.StartShutdownListener,
 		advertiseEndpoint:     network.AdvertiseEndpoint,
 		selectServerPort:      randomServerPort,
-		openFirewall: func(ctx context.Context, rule firewall.Rule) (firewallLease, error) {
-			return firewall.Open(ctx, rule)
-		},
-		listen:           net.Listen,
-		openReceiveStore: receive.OpenStore,
+		openFirewall:          firewall.Open,
+		listen:                net.Listen,
+		openReceiveStore:      receive.OpenStore,
 		newClipboardSink: func(backend string) (receive.TextSink, error) {
 			sink, err := clipboard.NewSink(backend)
 			if errors.Is(err, clipboard.ErrUnsupportedBackend) {

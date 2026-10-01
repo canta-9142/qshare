@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/canta-9142/qshare/internal/platform/firewall"
 	"github.com/canta-9142/qshare/internal/receive"
 	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
@@ -29,7 +30,7 @@ type sessionRun struct {
 	listener      net.Listener
 	serverDone    chan error
 	heading       string
-	lease         firewallLease
+	lease         firewall.Lease
 	files         *share.Collection
 	directory     *share.Directory
 	textProcessor *receive.TextProcessor
