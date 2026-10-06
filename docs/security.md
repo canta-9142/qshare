@@ -32,6 +32,8 @@ Only paths explicitly selected by the CLI may enter a send session. Validation
 finishes before the server starts.
 
 - The selected final file component must be a regular file, not a symlink.
+  The opened handle is checked again, and opening does not wait for a writer
+  if a regular file is replaced by a FIFO between validation and open.
 - Browser routes use opaque resource IDs, never local paths or filenames.
 - Duplicate filenames do not merge authorization.
 - ZIP entry names are sanitized and cannot be absolute or contain traversal.
