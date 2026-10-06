@@ -75,6 +75,62 @@ func TestDirectoryArchivePreservesHierarchyOrderAndEmptyDirectories(t *testing.T
 	}
 }
 
+func TestDirectoryArchiveSanitizesRootAndChildren(t *testing.T) {
+	root := filepath.Join(t.TempDir(), `C:\shared`)
+	for _, dir := range []string{root, filepath.Join(root, `a\b`), filepath.Join(root, "a_b.")} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"A_B", "a_b./file.txt", `a\b/x\..\outside.txt`, `a\b/a\b.txt`, `a\b/a_b.txt`} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv, sess, _ := newDirectoryTestServer(t, root)
+	response := httptest.NewRecorder()
+	srv.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	reader, err := zip.NewReader(bytes.NewReader(response.Body.Bytes()), int64(response.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"C__shared/": "", "C__shared/a_b/": "",
+		"C__shared/a_b/x_.._outside.txt": `a\b/x\..\outside.txt`,
+		"C__shared/a_b/a_b.txt":          `a\b/a\b.txt`,
+		"C__shared/a_b/a_b (1).txt":      `a\b/a_b.txt`,
+		"C__shared/a_b (1)/":             "",
+		"C__shared/a_b (1)/file.txt":     "a_b./file.txt",
+		"C__shared/A_B (2)":              "A_B",
+	}
+	if len(reader.File) != len(want) {
+		t.Fatalf("entries = %d, want %d", len(reader.File), len(want))
+	}
+	for _, file := range reader.File {
+		content, ok := want[file.Name]
+		if !ok {
+			t.Errorf("unexpected entry %q", file.Name)
+			continue
+		}
+		delete(want, file.Name)
+		rc, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != content {
+			t.Errorf("entry %q content = %q, want %q", file.Name, body, content)
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("missing entries: %v", want)
+	}
+}
+
 func TestDirectoryArchiveRejectsChangedTree(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "dir")

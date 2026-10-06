@@ -5,7 +5,6 @@ import (
 	"context"
 	"mime"
 	"net/http"
-	"path"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/share"
@@ -18,7 +17,7 @@ func (s *directoryHandler) directoryArchive(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	zw := zip.NewWriter(w)
-	if err := s.writeDirectoryArchive(r.Context(), zw, root, root.Name()); err != nil {
+	if err := s.writeDirectoryArchive(r.Context(), zw, root, safeArchiveName(root.Name())); err != nil {
 		panic(http.ErrAbortHandler)
 	}
 	if err := zw.Close(); err != nil {
@@ -39,8 +38,10 @@ func (s *directoryHandler) writeDirectoryArchive(ctx context.Context, zw *zip.Wr
 		if _, err := zw.CreateHeader(header); err != nil {
 			return err
 		}
+		used := make(map[string]struct{})
 		for _, child := range node.Children() {
-			if err := s.writeDirectoryArchive(ctx, zw, child, path.Join(archivePath, child.Name())); err != nil {
+			name := uniqueArchiveName(child.Name(), used)
+			if err := s.writeDirectoryArchive(ctx, zw, child, archivePath+"/"+name); err != nil {
 				return err
 			}
 		}

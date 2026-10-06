@@ -48,6 +48,59 @@ func TestArchivePreservesOrderContentAndMakesDuplicateNamesUnique(t *testing.T) 
 	}
 }
 
+func TestSafeArchiveName(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{`..\outside.txt`, ".._outside.txt"},
+		{"/outside.txt", "_outside.txt"},
+		{`C:\outside.txt`, "C__outside.txt"},
+		{`\\server\share`, "__server_share"},
+		{"", "_"}, {".", "_"}, {"..", "_"}, {"a\x00b", "a_b"},
+		{"ordinary.txt", "ordinary.txt"},
+		{".. ", "_"}, {"a.txt. ", "a.txt"},
+		{"CON", "_CON"}, {"nul.txt", "_nul.txt"},
+		{"con .txt", "_con .txt"}, {"CONIN$", "_CONIN$"}, {"CONOUT$", "_CONOUT$"},
+		{"COM1.txt", "_COM1.txt"}, {"lpt9", "_lpt9"}, {"COM¹", "_COM¹"},
+		{"COM0", "COM0"}, {"COM10.txt", "COM10.txt"}, {"COMLPT1", "COMLPT1"},
+	} {
+		if got := safeArchiveName(tc.input); got != tc.want {
+			t.Errorf("safeArchiveName(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestUniqueArchiveNameHandlesExtractionCollisions(t *testing.T) {
+	used := make(map[string]struct{})
+	for _, tc := range []struct{ input, want string }{
+		{"A.txt", "A.txt"}, {"a.txt", "a (1).txt"},
+		{"a.txt. ", "a (2).txt"}, {"A (1).txt", "A (1) (1).txt"},
+		{"CON.txt", "_CON.txt"}, {"_con.txt", "_con (1).txt"},
+		{".. ", "_"}, {"_", "_ (1)"},
+	} {
+		if got := uniqueArchiveName(tc.input, used); got != tc.want {
+			t.Errorf("uniqueArchiveName(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestArchiveSanitizesBeforeResolvingCollisions(t *testing.T) {
+	server, sess := newMultiFileTestServer(t, []string{`..\outside.txt`, `a\b.txt`, "a_b.txt"}, []string{"one", "two", "three"})
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/z/"+sess.Token().String(), nil))
+	reader, err := zip.NewReader(bytes.NewReader(response.Body.Bytes()), int64(response.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".._outside.txt", "a_b.txt", "a_b (1).txt"}
+	if len(reader.File) != len(want) {
+		t.Fatalf("entries = %d", len(reader.File))
+	}
+	for i, file := range reader.File {
+		if file.Name != want[i] {
+			t.Errorf("entry %d = %q, want %q", i, file.Name, want[i])
+		}
+	}
+}
+
 func TestCopyWithContextStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

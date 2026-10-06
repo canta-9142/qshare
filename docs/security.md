@@ -35,6 +35,15 @@ finishes before the server starts.
 - Browser routes use opaque resource IDs, never local paths or filenames.
 - Duplicate filenames do not merge authorization.
 - ZIP entry names are sanitized and cannot be absolute or contain traversal.
+  Each name component replaces `/`, `\`, `:`, and NUL with `_`; empty names,
+  `.` and `..` become `_`. Trailing ASCII spaces and periods are removed;
+  names that become empty become `_`. Windows device names (including names
+  with extensions) receive an `_` prefix. Collisions after sanitization are
+  compared using Unicode lowercase and receive ` (n)` suffixes.
+  Directory archives apply this to the root and each descendant, with files
+  and directories sharing collision tracking within each parent.
+  This does not guarantee compatibility with every extraction filesystem's
+  character restrictions, Unicode normalization, or path length limits.
 - Files and archives are streamed and stop on request cancellation.
 - ZIP archives are finalized only after every entry succeeds. Generation or
   finalization failures abort the HTTP transfer so an incomplete archive is not
