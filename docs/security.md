@@ -57,13 +57,33 @@ Directory authorization is frozen at startup. Hidden descendants, symlinks,
 and non-regular entries are excluded. Each included node stores an opaque ID,
 relative hierarchy, and filesystem identity.
 
+The selected root cannot be a symlink, including when its path ends in `/`.
+qshare keeps handles to the root and every included file and directory until
+session cleanup, preventing deletion and inode reuse from making a replacement
+object pass the identity check. These handles pin identity, not file contents;
+downloads still reopen and verify the current authorized path.
+
 Before serving a file, qshare reopens it from the authorized root without
-following symlinks and verifies that it is the same filesystem object. Added,
-renamed, missing, or replaced entries are not served. The same checks apply
-while creating a directory archive.
+following symlinks. Each node, including the root and every intermediate
+directory, is checked for its startup-time type and filesystem identity using
+the opened handle before opening the next node relative to that handle. Added,
+renamed, missing, or replaced entries are not served, even if a replacement
+directory contains a hard link to the original file. Individual downloads and
+directory archive creation use the same reopening checks.
+
+Checks apply as each node is reopened. They do not form an atomic filesystem
+snapshot: a node may be renamed or removed after its handle is verified, and
+an already opened download may continue using that same object. In-place file
+content changes remain visible; the tree and file contents are not locked
+throughout a request or archive transfer. Browser navigation shows the frozen
+startup metadata.
 
 Directory limits bound startup work and in-memory metadata: 1,000 regular
-files, 2,000 encountered entries, and depth 20.
+files, 2,000 encountered entries, and depth 20. Directory sharing retains at
+most 2,001 handles, including the root; reopening resources and running the
+server require additional descriptors. If the process cannot open enough
+handles during validation, startup fails and closes all acquired handles
+without publishing a partial tree or changing the process descriptor limit.
 
 ## Uploads
 

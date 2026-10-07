@@ -66,6 +66,14 @@ added later are not shared; missing, renamed, or replaced authorized objects
 are not served. Changes to the contents of the same regular file are visible
 when it is downloaded.
 
+The selected directory cannot be a symlink, even with a trailing `/`. The
+session retains one open handle per authorized object, including the root
+(at most 2,001), plus descriptors for requests and the server. An insufficient
+process descriptor limit fails startup and releases all acquired handles.
+Identity is verified as each node is reopened; later renames or removals may
+leave an already opened transfer running. This is not an atomic snapshot of
+the filesystem or file contents.
+
 ## Send text
 
 ```sh

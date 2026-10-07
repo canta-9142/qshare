@@ -131,7 +131,7 @@ func TestDirectoryArchiveSanitizesRootAndChildren(t *testing.T) {
 	}
 }
 
-func TestDirectoryArchiveRejectsChangedTree(t *testing.T) {
+func TestDirectoryDownloadAndArchiveRejectReplacedParentWithHardLink(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "dir")
 	if err := os.Mkdir(dir, 0o700); err != nil {
@@ -140,12 +140,24 @@ func TestDirectoryArchiveRejectsChangedTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "file"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	srv, sess, _ := newDirectoryTestServer(t, root)
+	srv, sess, directory := newDirectoryTestServer(t, root)
+	node := directory.Root().Children()[0].Children()[0]
 	if err := os.Rename(dir, filepath.Join(root, "moved")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(root, "moved", "file"), filepath.Join(dir, "file")); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		recorder := httptest.NewRecorder()
+		target := "/d/" + sess.Token().String() + "/" + string(node.ID())
+		srv.ServeHTTP(recorder, httptest.NewRequest(method, target, nil))
+		if recorder.Code != http.StatusNotFound {
+			t.Errorf("%s download status = %d, want 404", method, recorder.Code)
+		}
 	}
 	recorder := httptest.NewRecorder()
 	assertArchiveAborts(t, func() {

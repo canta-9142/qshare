@@ -1,6 +1,7 @@
 package share
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -51,8 +52,78 @@ func TestOpenDirectoryRejectsSelectedSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := OpenDirectory(link); err == nil {
-		t.Fatal("OpenDirectory() accepted symlink root")
+	for _, suffix := range []string{"", "/", "///"} {
+		t.Run("suffix="+suffix, func(t *testing.T) {
+			directory, err := OpenDirectory(link + suffix)
+			if directory != nil {
+				_ = directory.Close()
+			}
+			if err == nil {
+				t.Fatal("OpenDirectory() accepted symlink root")
+			}
+		})
+	}
+}
+
+func TestOpenDirectoryAllowsTrailingSeparators(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "file"), "content")
+	for _, suffix := range []string{"/", "///"} {
+		d, err := OpenDirectory(root + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = d.Close() })
+		file, err := d.OpenFile(d.Root().Children()[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = file.Close()
+	}
+	if _, err := OpenDirectory(""); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("OpenDirectory(empty path) error = %v, want nonexistent path", err)
+	}
+}
+
+func TestDirectoryPinsEveryNodeUntilClose(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "empty")
+	mustMkdir(t, path)
+	mustWrite(t, filepath.Join(root, "file"), "content")
+	d, err := OpenDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	handles := []*os.File{d.root}
+	for _, node := range d.byID {
+		if node == d.Root() {
+			continue
+		}
+		if node.pinned == nil {
+			t.Fatalf("node %q has no retained handle", node.Name())
+		}
+		handles = append(handles, node.pinned)
+	}
+	directory := d.Root().Children()[0]
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, path)
+	info, err := directory.pinned.Stat()
+	if err != nil || !os.SameFile(info, directory.identity) {
+		t.Fatalf("removed directory identity was not retained: %v", err)
+	}
+	if err := d.VerifyDirectory(directory); err == nil {
+		t.Fatal("VerifyDirectory() accepted replacement directory")
+	}
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, handle := range handles {
+		if _, err := handle.Stat(); !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("retained handle was not closed: %v", err)
+		}
 	}
 }
 
@@ -104,6 +175,87 @@ func TestDirectoryRejectsRenamedRoot(t *testing.T) {
 	}
 	if _, err := d.OpenFile(node); err == nil {
 		t.Fatal("OpenFile() accepted renamed root")
+	}
+}
+
+func TestDirectoryOpenFileRejectsReplacedAncestorWithHardLink(t *testing.T) {
+	for _, replaced := range []string{"parent", filepath.Join("parent", "child")} {
+		t.Run(replaced, func(t *testing.T) {
+			root := t.TempDir()
+			parent := filepath.Join(root, "parent")
+			child := filepath.Join(parent, "child")
+			mustMkdir(t, parent)
+			mustMkdir(t, child)
+			path := filepath.Join(child, "file")
+			mustWrite(t, path, "content")
+			d, err := OpenDirectory(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = d.Close() })
+			node := d.Root().Children()[0].Children()[0].Children()[0]
+
+			moved := filepath.Join(root, "moved")
+			if err := os.Rename(filepath.Join(root, replaced), moved); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(child, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			movedFile := filepath.Join(moved, "file")
+			if replaced == "parent" {
+				movedFile = filepath.Join(moved, "child", "file")
+			}
+			if err := os.Link(movedFile, path); err != nil {
+				t.Fatal(err)
+			}
+			file, err := d.OpenFile(node)
+			if file != nil {
+				_ = file.Close()
+			}
+			if err == nil {
+				t.Fatal("OpenFile() accepted hard link through a replaced ancestor")
+			}
+		})
+	}
+}
+
+func TestDirectoryRejectsReplacedAncestorWithOriginalDescendants(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	child := filepath.Join(parent, "child")
+	mustMkdir(t, parent)
+	mustMkdir(t, child)
+	path := filepath.Join(child, "file")
+	mustWrite(t, path, "old")
+	d, err := OpenDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	directory := d.Root().Children()[0].Children()[0]
+	node := directory.Children()[0]
+	if err := d.VerifyDirectory(directory); err != nil {
+		t.Fatal(err)
+	}
+
+	moved := filepath.Join(root, "moved")
+	if err := os.Rename(parent, moved); err != nil {
+		t.Fatal(err)
+	}
+	mustMkdir(t, parent)
+	if err := os.Rename(filepath.Join(moved, "child"), child); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.VerifyDirectory(directory); err == nil {
+		t.Error("VerifyDirectory() accepted original directory through a replaced ancestor")
+	}
+	file, err := d.OpenFile(node)
+	if file != nil {
+		_ = file.Close()
+	}
+	if err == nil {
+		t.Error("OpenFile() accepted original file through a replaced ancestor")
 	}
 }
 

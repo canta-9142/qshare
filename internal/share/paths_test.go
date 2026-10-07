@@ -43,6 +43,7 @@ func TestOpenPaths(t *testing.T) {
 		{name: "missing", paths: []string{missing}, wantError: true},
 		{name: "partial files", paths: []string{first, missing}, wantError: true},
 		{name: "directory symlink", paths: []string{link}, wantError: true},
+		{name: "directory symlink with trailing slash", paths: []string{link + "/"}, wantError: true},
 		{name: "symlink and file", paths: []string{link, first}, wantError: true},
 	}
 	for _, tt := range tests {

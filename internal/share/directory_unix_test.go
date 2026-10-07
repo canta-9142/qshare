@@ -3,6 +3,8 @@
 package share
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +12,61 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+func TestOpenDirectoryClosesHandlesOnDescriptorExhaustion(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	mustMkdir(t, parent)
+	for i := range 128 {
+		mustMkdir(t, filepath.Join(parent, fmt.Sprint(i)))
+	}
+	var original unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &original); err != nil {
+		t.Fatal(err)
+	}
+	if original.Cur < 64 {
+		t.Skip("descriptor limit is already below 64")
+	}
+	limited := original
+	limited.Cur = 64
+	if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &limited); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &original); err != nil {
+			t.Errorf("restore descriptor limit: %v", err)
+		}
+	})
+	available := func() int {
+		var handles []*os.File
+		defer func() {
+			for _, handle := range handles {
+				_ = handle.Close()
+			}
+		}()
+		for {
+			handle, err := os.Open(root)
+			if errors.Is(err, unix.EMFILE) {
+				return len(handles)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			handles = append(handles, handle)
+		}
+	}
+	before := available()
+	d, err := OpenDirectory(root)
+	if d != nil {
+		_ = d.Close()
+	}
+	if !errors.Is(err, unix.EMFILE) || d != nil {
+		t.Fatalf("OpenDirectory() returned directory=%t, error=%v, want no directory and descriptor exhaustion", d != nil, err)
+	}
+	if after := available(); after != before {
+		t.Fatalf("available descriptors after failed startup = %d, want %d", after, before)
+	}
+}
 
 func TestOpenDirectoryExcludesFIFO(t *testing.T) {
 	root := t.TempDir()

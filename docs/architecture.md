@@ -79,6 +79,12 @@ Files and directory nodes receive opaque IDs. Directory sessions retain a
 startup-time authorization tree and filesystem identity for each included
 object.
 
+Directory sharing retains an open handle to every authorized object until
+cleanup to prevent inode reuse. Downloads and archive entries reopen the path
+through verified ancestor handles and check each node's type and identity.
+Nodes are registered before recursively scanning their children so startup
+failure cleanup also owns partially scanned directories.
+
 After session authentication, HTTP input resolves an opaque resource ID only
 within the resource bound to that handler at construction:
 
