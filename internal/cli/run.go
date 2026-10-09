@@ -10,10 +10,6 @@ import (
 	"github.com/canta-9142/qshare/internal/app"
 )
 
-func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
-	return runWithInputAndQuitListener(argv, developmentVersion, nil, true, stdout, stderr, nil)
-}
-
 func RunWithStdin(argv []string, version string, stdin *os.File, stdout io.Writer, stderr io.Writer) int {
 	stdinIsTerminal := isTerminal(stdin)
 	var startQuitListener quitListenerStarter
@@ -23,10 +19,6 @@ func RunWithStdin(argv []string, version string, stdin *os.File, stdout io.Write
 		}
 	}
 	return runWithInputAndQuitListener(argv, version, stdin, stdinIsTerminal, stdout, stderr, startQuitListener)
-}
-
-func runWithInput(argv []string, stdin io.Reader, stdinIsTerminal bool, stdout io.Writer, stderr io.Writer) int {
-	return runWithInputAndQuitListener(argv, developmentVersion, stdin, stdinIsTerminal, stdout, stderr, nil)
 }
 
 type terminalQuitListener interface {
@@ -61,27 +53,14 @@ func runWithInputAndQuitListener(
 	ctx, stopSignals := signalContext(context.Background())
 	defer stopSignals()
 
-	var quitListener terminalQuitListener
-	listenerWatchDone := make(chan struct{})
-	var listenerWatchExited chan struct{}
-	var startShutdownListener func() (<-chan struct{}, error)
+	var startShutdownListener func() (<-chan struct{}, func() error, error)
 	if startQuitListener != nil {
-		startShutdownListener = func() (<-chan struct{}, error) {
+		startShutdownListener = func() (<-chan struct{}, func() error, error) {
 			listener, err := startQuitListener()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			quitListener = listener
-			listenerWatchExited = make(chan struct{})
-			go func() {
-				defer close(listenerWatchExited)
-				select {
-				case <-ctx.Done():
-					_ = listener.Close()
-				case <-listenerWatchDone:
-				}
-			}()
-			return listener.Quit(), nil
+			return listener.Quit(), listener.Close, nil
 		}
 	}
 	application := app.New(app.Dependencies{
@@ -91,11 +70,6 @@ func runWithInputAndQuitListener(
 	})
 
 	err = application.Run(ctx, result.Request)
-	close(listenerWatchDone)
-	if quitListener != nil {
-		err = errors.Join(err, quitListener.Close())
-		<-listenerWatchExited
-	}
 	if err != nil {
 		fmt.Fprintf(stderr, "qshare: %v\n", err)
 		return exitCodeForError(err)

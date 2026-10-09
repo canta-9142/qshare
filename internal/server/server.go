@@ -2,10 +2,7 @@ package server
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"time"
 
@@ -22,119 +19,107 @@ type textSubmitter interface {
 	Submit(context.Context, share.Text) error
 }
 
-type Server struct {
-	session              *session.Session
+// handler binds route authorization to one session. Mode handlers borrow their
+// resources from app, which owns their lifetime and cleanup.
+type handler struct {
+	session *session.Session
+	mux     *http.ServeMux
+	now     func() time.Time
+}
+
+type fileHandler struct {
+	*handler
+	files *share.Collection
+}
+
+type directoryHandler struct {
+	*handler
+	directory *share.Directory
+}
+
+type textHandler struct {
+	*handler
+	text share.Text
+}
+
+type receiveHandler struct {
+	*handler
 	uploadStore          uploadStore
 	textSubmitter        textSubmitter
 	maxUploadRequestSize int64
-	server               *http.Server
-	mux                  *http.ServeMux
-	listener             net.Listener
-	done                 chan error
-	now                  func() time.Time
 }
 
-func NewSendFile(sess *session.Session) *Server {
-	server := newServer(sess)
-
-	server.mux.HandleFunc("GET /s/{token}", server.downloadPage)
-	server.mux.HandleFunc("GET /d/{token}/{resource}", server.download)
-	server.mux.HandleFunc("HEAD /d/{token}/{resource}", server.download)
-	server.mux.HandleFunc("GET /z/{token}", server.archive)
-
+func NewSendFile(sess *session.Session, files *share.Collection) http.Handler {
+	server := &fileHandler{handler: newHandler(sess), files: files}
+	server.handle("GET /s/{token}", server.downloadPage)
+	server.handle("GET /d/{token}/{resource}", server.download)
+	server.handle("GET /z/{token}", server.archive)
 	return server
 }
 
-func NewSendDirectory(sess *session.Session) *Server {
-	server := newServer(sess)
-	server.mux.HandleFunc("GET /s/{token}", server.directoryRoot)
-	server.mux.HandleFunc("GET /b/{token}/{resource}", server.directoryPage)
-	server.mux.HandleFunc("GET /d/{token}/{resource}", server.directoryDownload)
-	server.mux.HandleFunc("HEAD /d/{token}/{resource}", server.directoryDownload)
-	server.mux.HandleFunc("GET /z/{token}", server.directoryArchive)
+func NewSendDirectory(sess *session.Session, directory *share.Directory) http.Handler {
+	server := &directoryHandler{handler: newHandler(sess), directory: directory}
+	server.handle("GET /s/{token}", server.directoryRoot)
+	server.handle("GET /b/{token}/{resource}", server.directoryPage)
+	server.handle("GET /d/{token}/{resource}", server.directoryDownload)
+	server.handle("GET /z/{token}", server.directoryArchive)
 	return server
 }
 
-func NewSendText(sess *session.Session) *Server {
-	server := newServer(sess)
-
-	server.mux.HandleFunc("GET /s/{token}", server.textPage)
-
+func NewSendText(sess *session.Session, text share.Text) http.Handler {
+	server := &textHandler{handler: newHandler(sess), text: text}
+	server.handle("GET /s/{token}", server.textPage)
 	return server
 }
 
-func NewReceive(sess *session.Session, store uploadStore, submitter textSubmitter) *Server {
-	server := newServer(sess)
+func NewReceive(sess *session.Session, store *receive.Store, submitter *receive.TextProcessor) http.Handler {
+	return newReceive(sess, store, submitter)
+}
 
-	server.mux.HandleFunc("GET /s/{token}", server.uploadPage)
-	server.mux.HandleFunc("POST /u/{token}", server.upload)
-	server.mux.HandleFunc("POST /t/{token}", server.submitText)
-	server.uploadStore = store
-	server.textSubmitter = submitter
-	server.maxUploadRequestSize = receive.MaxFileSize + multipartOverhead
-
+func newReceive(sess *session.Session, store uploadStore, submitter textSubmitter) *receiveHandler {
+	server := &receiveHandler{
+		handler:              newHandler(sess),
+		uploadStore:          store,
+		textSubmitter:        submitter,
+		maxUploadRequestSize: receive.MaxFileSize + multipartOverhead,
+	}
+	server.handle("GET /s/{token}", server.uploadPage)
+	server.handle("POST /u/{token}", server.upload)
+	server.handle("POST /t/{token}", server.submitText)
 	return server
 }
 
-func newServer(sess *session.Session) *Server {
-	mux := http.NewServeMux()
-
-	server := &Server{
+func newHandler(sess *session.Session) *handler {
+	return &handler{
 		session: sess,
-		mux:     mux,
-		done:    make(chan error, 1),
+		mux:     http.NewServeMux(),
 		now:     time.Now,
 	}
+}
 
-	server.server = &http.Server{
-		Handler:           mux,
+// NewHTTPServer applies the transport limits without binding or starting it.
+func NewHTTPServer(h http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           h,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
-
-	return server
 }
 
-func (s *Server) Start(bindAddr string) (net.Addr, error) {
-	ln, err := net.Listen("tcp", bindAddr)
-	if err != nil {
-		return nil, fmt.Errorf("listen: %w", err)
-	}
+func (s *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mux.ServeHTTP(w, r)
+}
 
-	s.listener = ln
-
-	go func() {
-		err := s.server.Serve(ln)
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
+// handle authenticates after ServeMux has populated path values and before any
+// resource lookup or request body processing. Every protected route uses it.
+func (s *handler) handle(pattern string, next http.HandlerFunc) {
+	s.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		token, err := session.ParseToken(r.PathValue("token"))
+		if err != nil || !s.session.Authorize(token, s.now()) {
+			http.NotFound(w, r)
+			return
 		}
-		s.done <- err
-		close(s.done)
-	}()
-
-	return ln.Addr(), nil
-}
-
-func (s *Server) Shutdown(ctx context.Context) error {
-	if err := s.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown HTTP server: %w", err)
-	}
-	return nil
-}
-
-func (s *Server) Close() error {
-	if err := s.server.Close(); err != nil {
-		return fmt.Errorf("close HTTP server: %w", err)
-	}
-	return nil
-}
-
-func (s *Server) tokenFromRequest(r *http.Request) (session.Token, error) {
-	raw := r.PathValue("token")
-	return session.ParseToken(raw)
-}
-
-func (s *Server) Done() <-chan error {
-	return s.done
+		next(w, r)
+	})
 }

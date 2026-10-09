@@ -5,37 +5,32 @@ import (
 	"context"
 	"mime"
 	"net/http"
-	"path"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func (s *Server) directoryArchive(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) || s.session.Directory() == nil {
-		http.NotFound(w, r)
-		return
-	}
-	root := s.session.Directory().Root()
+func (s *directoryHandler) directoryArchive(w http.ResponseWriter, r *http.Request) {
+	root := s.directory.Root()
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": root.Name() + ".zip"}))
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	zw := zip.NewWriter(w)
-	if err := s.writeDirectoryArchive(r.Context(), zw, root, root.Name()); err != nil {
-		_ = zw.Close()
-		return
+	if err := s.writeDirectoryArchive(r.Context(), zw, root, safeArchiveName(root.Name())); err != nil {
+		panic(http.ErrAbortHandler)
 	}
-	_ = zw.Close()
+	if err := zw.Close(); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
-func (s *Server) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node *share.Node, archivePath string) error {
+func (s *directoryHandler) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node *share.Node, archivePath string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if node.Kind() == share.NodeDirectory {
-		if err := s.session.Directory().VerifyDirectory(node); err != nil {
+		if err := s.directory.VerifyDirectory(node); err != nil {
 			return err
 		}
 		header := &zip.FileHeader{Name: archivePath + "/", Method: zip.Store}
@@ -43,14 +38,16 @@ func (s *Server) writeDirectoryArchive(ctx context.Context, zw *zip.Writer, node
 		if _, err := zw.CreateHeader(header); err != nil {
 			return err
 		}
+		used := make(map[string]struct{})
 		for _, child := range node.Children() {
-			if err := s.writeDirectoryArchive(ctx, zw, child, path.Join(archivePath, child.Name())); err != nil {
+			name := uniqueArchiveName(child.Name(), used)
+			if err := s.writeDirectoryArchive(ctx, zw, child, archivePath+"/"+name); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	file, err := s.session.Directory().OpenFile(node)
+	file, err := s.directory.OpenFile(node)
 	if err != nil {
 		return err
 	}

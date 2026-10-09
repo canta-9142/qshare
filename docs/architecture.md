@@ -35,7 +35,11 @@ filesystem authorization, or network-selection logic.
 ### `internal/cli`
 
 Parses arguments and stdin, maps them to an `app.Request`, routes stdout and
-stderr, handles termination signals, and maps errors to exit codes.
+stderr, handles termination signals, and maps errors to exit codes. Terminal initialization supplies a quit
+notification and restoration function to the application; CLI code implements
+terminal operations but does not decide when to restore the terminal.
+Path sends produce one `OperationSendPaths` request without inspecting the
+filesystem; share decides whether those paths select files or a directory.
 
 ### `internal/app`
 
@@ -44,30 +48,49 @@ Owns operation orchestration:
 1. open and validate resources;
 2. configure receive and platform adapters;
 3. determine the advertised LAN address;
-4. create a session and HTTP server;
-5. render the authenticated URL as a QR code;
+4. create the session handler, reserve a LAN listener, and configure its firewall
+   rule using a context bounded by the session expiry;
+5. prepare the QR code and URL in memory, check validity, start a standard HTTP
+   server, and display the session;
 6. wait for expiration, a signal, or a server failure;
-7. close resources and drain or stop the server.
+7. drain or stop HTTP, remove the firewall rule, finish text processing, release
+   shared resources, and restore the terminal.
 
-Application code depends on constructors and interfaces so security-sensitive
-logic and lifecycle behavior remain testable.
+Tests replace listener acquisition and external platform operations. HTTP
+handlers are built directly, without mode-specific server factories.
+The application owns shared collections, directories, text, the receive store,
+and the text processor. It lends these resources to HTTP handlers and releases
+resources requiring cleanup only after stopping HTTP.
 
 ### `internal/session`
 
-Owns the session token, expiry, operation resources, and authorization checks.
-It has no HTTP, terminal, or OS-networking dependency.
+Owns only the session token, expiry, and authorization checks. All modes use
+`session.New(lifetime)`. Session neither references nor closes operation
+resources and has no dependency on share, receive, HTTP, terminal, or
+OS-networking packages.
 
 ### `internal/share`
 
 Turns CLI-selected files, directories, and text into validated resources.
+`OpenPaths` checks path combinations before opening either a file collection or
+a single directory, preserving the safety checks in their respective open
+functions. Invalid selections are distinguished from filesystem failures; app
+maps `share.ErrInvalidSelection` to `app.ErrInvalidRequest` for CLI exit code 2.
 Files and directory nodes receive opaque IDs. Directory sessions retain a
 startup-time authorization tree and filesystem identity for each included
 object.
 
-HTTP input resolves a token and opaque resource ID:
+Directory sharing retains an open handle to every authorized object until
+cleanup to prevent inode reuse. Downloads and archive entries reopen the path
+through verified ancestor handles and check each node's type and identity.
+Nodes are registered before recursively scanning their children so startup
+failure cleanup also owns partially scanned directories.
+
+After session authentication, HTTP input resolves an opaque resource ID only
+within the resource bound to that handler at construction:
 
 ```text
-CLI path → validated resource → session → opaque ID → HTTP lookup
+CLI path → app-owned validated resource → mode handler → opaque ID lookup
 ```
 
 It must never become:
@@ -87,6 +110,23 @@ cleanup, and text sinks.
 Adapts sessions and resources to `net/http`. It parses requests, authenticates
 tokens, maps errors to HTTP responses, escapes browser output, and streams
 files and ZIP archives. It does not decide which local paths are shareable.
+
+Mode constructors return `http.Handler`. A small `NewHTTPServer` function applies
+the HTTP timeout and header limits and returns a standard `*http.Server`.
+This package does not bind listeners, launch serving goroutines, or own shutdown
+notifications; those belong to application orchestration.
+
+Each mode constructor takes a session and the concrete resources that mode
+needs. File, directory, text, and receive handlers hold only their mode's
+resources. Receive handlers retain narrow internal interfaces for testing
+upload and text-processing failures.
+
+All protected routes are registered through one authentication wrapper. It
+parses the token and checks authorization and expiry after `ServeMux` sets path
+values, before resource lookup or request body processing. Invalid credentials
+return 404. The authenticated session and lookup resource are fixed together
+when the handler is built; there is no global resource registry. Handlers call
+`Collection.Lookup` or `Directory.Lookup` directly after authentication.
 
 Browser templates are embedded from `internal/server/web`, keeping the binary
 self-contained.
@@ -110,9 +150,58 @@ responses stream data rather than buffering complete content. A normal download
 does not mutate or complete the session, so retries, `HEAD`, and range requests
 remain independent while the token is valid.
 
-On expiration, the HTTP server drains for at most 30 seconds. Signal handling
-closes it immediately through the same application lifecycle. Reusable packages
-return errors instead of logging.
+Each `Application.Run` owns a concrete `sessionRun` containing its acquired
+resources. Startup errors and session termination both pass through the same
+cleanup in `internal/app/lifecycle.go`. Application startup selects and reserves
+a LAN port, retaining the numeric port for the firewall rule and advertised URL.
+After firewall setup and QR generation succeed, it checks cancellation and
+expiry before running `http.Server.Serve` on that listener and displaying the
+session. It records the serving result through a channel. Cleanup closes the
+listener even if serving never started, waits for serving to return, and removes
+the firewall rule with a separate five-second timeout. Cleanup errors are joined
+without skipping later resource releases.
+
+On expiration, HTTP drains for at most 30 seconds using a context independent
+of signals, then text processing is canceled. On `q`, HTTP drains for at most
+30 seconds using the session context; if HTTP and firewall cleanup succeed,
+accepted text submissions are drained using that context. Signals interrupt
+this interactive drain. Other exit paths close HTTP and cancel text processing.
+
+One application goroutine restores the terminal after either cancellation or a
+normal cleanup notification. Signals therefore restore it even during an
+expiration drain or blocked text output. `Run` receives the restoration result
+before returning and includes any error in its result.
+Reusable packages return errors instead of logging.
+
+If privileged firewall helper startup fails, qshare closes its input and sends
+SIGINT. It gives the helper at most six seconds to exit, including when startup is
+canceled, allowing its five-second cleanup to finish before attempting to kill
+the process without waiting indefinitely.
+Termination by the requested SIGINT (including exit status 130) is expected.
+Other exit failures, shutdown timeouts, and kill failures are returned together
+with cancellation and helper diagnostics. Unexpected readiness responses also
+retain helper diagnostics in the startup error.
+When helper exit and cancellation are both ready, a successful shutdown retains
+the cancellation reason; a failed shutdown retains both errors and diagnostics.
+
+The privileged helper monitors parent-input EOF, SIGINT, SIGTERM, and its rule
+expiry before starting firewall commands. Those commands share a cancellable
+context; acquired leases and partial setup use independent five-second cleanup
+contexts. Cleanup failures are joined with setup failures. If an nftables rule
+handle is unavailable after insertion was attempted, flushing its owned source
+set makes the rule stop matching; failure to flush is reported as well.
+
+Firewalld rule insertion allows authentication to continue while startup is
+active. Once startup is canceled, the client has a five-second grace period to
+respond and establish ownership before it is stopped.
+After insertion returns, cancellation removes a newly added rule using another
+five-second context. A concurrent `ALREADY_ENABLED` response leaves the rule
+unowned, because firewall-cmd treats that response as a successful exit with a
+warning. Existing rules are never removed. If insertion does not respond within
+the cancellation grace period, its outcome is ambiguous: qshare reports the
+failure and relies on the rule's native
+timeout instead of deleting a rule whose ownership cannot be confirmed. See the
+[firewall-cmd contract](https://firewalld.org/documentation/man-pages/firewall-cmd.html).
 
 ## Design constraints
 

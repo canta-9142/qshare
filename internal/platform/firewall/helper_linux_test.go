@@ -3,6 +3,12 @@
 package firewall
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"os"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -30,6 +36,64 @@ func TestParseHelperRequest(t *testing.T) {
 	}
 	if !request.expires.Equal(expires) || request.rule.Timeout != 10*time.Minute {
 		t.Errorf("expires = %v, timeout = %v; want %v, 10m", request.expires, request.rule.Timeout, expires)
+	}
+}
+
+func TestHelperCancelsCommandsDuringStartup(t *testing.T) {
+	cleanupFailure := errors.New("iptables removal failed")
+	for _, reason := range []string{"EOF", "SIGINT", "SIGTERM", "expire", "cleanup failure"} {
+		t.Run(reason, func(t *testing.T) {
+			input, parentInput := io.Pipe()
+			defer input.Close()
+			defer parentInput.Close()
+			signals := make(chan os.Signal, 1)
+			request := helperRequest{backend: nixOSIPTablesBackend, rule: testRule(), expires: time.Now().Add(time.Hour), leaseID: "0123456789abcdef"}
+			if reason == "expire" {
+				request.expires = time.Now().Add(50 * time.Millisecond)
+			}
+			runner := &fakeRunner{
+				results: []commandResult{{err: errors.New("signal: killed")}, {}},
+				onRun: func(ctx context.Context, args []string) {
+					if args[1] != "-I" {
+						assertFirewallCleanupContext(t, ctx)
+						return
+					}
+					deadline, ok := ctx.Deadline()
+					if !ok || !deadline.Equal(request.expires) {
+						t.Errorf("startup deadline=%v, want %v", deadline, request.expires)
+					}
+					switch reason {
+					case "EOF", "cleanup failure":
+						parentInput.Close()
+					case "SIGINT":
+						signals <- os.Interrupt
+					case "SIGTERM":
+						signals <- syscall.SIGTERM
+					}
+					select {
+					case <-ctx.Done():
+					case <-time.After(2 * time.Second):
+						t.Fatal("startup command was not canceled")
+					}
+				},
+			}
+			if reason == "cleanup failure" {
+				runner.results[1] = commandResult{err: cleanupFailure}
+				runner.results = append(runner.results, commandResult{err: cleanupFailure, exitCode: 2})
+			}
+			var output bytes.Buffer
+			err := runHelperSession(request, input, &output, runner, signals)
+			if reason == "cleanup failure" {
+				if !errors.Is(err, cleanupFailure) {
+					t.Fatalf("cleanup failure was lost: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("normal cancellation error=%v", err)
+			}
+			if output.Len() != 0 || len(runner.calls) < 2 || runner.calls[1].args[1] != "-D" {
+				t.Fatalf("output=%q, commands=%v", output, runner.calls)
+			}
+		})
 	}
 }
 

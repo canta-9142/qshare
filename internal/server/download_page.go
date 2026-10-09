@@ -1,17 +1,8 @@
 package server
 
 import (
-	"embed"
 	"fmt"
-	"html/template"
 	"net/http"
-)
-
-//go:embed web/common.html web/download.html
-var webFiles embed.FS
-
-var downloadPage = template.Must(
-	template.ParseFS(webFiles, "web/common.html", "web/download.html"),
 )
 
 type downloadPageData struct {
@@ -25,30 +16,19 @@ type downloadFileData struct {
 	URL  string
 }
 
-func (s *Server) downloadPage(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	if !s.session.Authorize(token, s.now()) {
-		http.NotFound(w, r)
-		return
-	}
-
+func (s *fileHandler) downloadPage(w http.ResponseWriter, r *http.Request) {
 	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'")
 
-	data := downloadPageData{ArchiveURL: "/z/" + token.String()}
-	for _, resource := range s.session.Resources().Resources() {
+	data := downloadPageData{ArchiveURL: "/z/" + s.session.Token().String()}
+	for _, resource := range s.files.Resources() {
 		data.Files = append(data.Files, downloadFileData{
 			Name: resource.Name(),
 			Size: formatFileSize(resource.Size()),
-			URL:  "/d/" + token.String() + "/" + string(resource.ID()),
+			URL:  "/d/" + s.session.Token().String() + "/" + string(resource.ID()),
 		})
 	}
 
-	if err := downloadPage.ExecuteTemplate(w, "download.html", data); err != nil {
+	if err := pageTemplates.ExecuteTemplate(w, "download.html", data); err != nil {
 		return
 	}
 }

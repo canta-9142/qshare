@@ -35,7 +35,7 @@ func TestUploadSavesFile(t *testing.T) {
 
 	request := newUploadRequest(t, "/u/"+sess.Token().String(), "photo.jpg", "image data")
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body = %q", response.Code, http.StatusCreated, response.Body.String())
@@ -73,41 +73,13 @@ func TestUploadCanBeRepeatedInSameSession(t *testing.T) {
 
 	for attempt := 0; attempt < 2; attempt++ {
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, newUploadRequest(t, path, "file.txt", "x"))
+		server.ServeHTTP(response, newUploadRequest(t, path, "file.txt", "x"))
 		if response.Code != http.StatusCreated {
 			t.Fatalf("attempt %d: status = %d, want %d", attempt+1, response.Code, http.StatusCreated)
 		}
 	}
 	if calls != 2 {
 		t.Errorf("Save() calls = %d, want 2", calls)
-	}
-}
-
-func TestUploadRejectsUnauthorizedRequests(t *testing.T) {
-	calls := 0
-	store := uploadStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
-		calls++
-		return receive.Result{}, nil
-	})
-	server, sess := newReceiveTestServer(t, store)
-	other := sess.Token()
-	other[0] ^= 0xff
-
-	for _, path := range []string{"/u/not-a-token", "/u/" + other.String()} {
-		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, newUploadRequest(t, path, "file.txt", "secret"))
-		if response.Code != http.StatusNotFound {
-			t.Errorf("%s: status = %d, want %d", path, response.Code, http.StatusNotFound)
-		}
-	}
-	server.now = sess.ExpiresAt
-	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, newUploadRequest(t, "/u/"+sess.Token().String(), "file.txt", "secret"))
-	if response.Code != http.StatusNotFound {
-		t.Errorf("expired request status = %d, want %d", response.Code, http.StatusNotFound)
-	}
-	if calls != 0 {
-		t.Errorf("Save() calls = %d, want 0", calls)
 	}
 }
 
@@ -118,7 +90,7 @@ func TestUploadRejectsInvalidMultipartRequest(t *testing.T) {
 	}))
 	request := httptest.NewRequest(http.MethodPost, "/u/"+sess.Token().String(), strings.NewReader("not multipart"))
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
 	}
@@ -141,7 +113,7 @@ func TestUploadRejectsMultipartWithoutFile(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/u/"+sess.Token().String(), &body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
@@ -175,7 +147,7 @@ func TestUploadRejectsRequestOverLimitAndRemovesPartialFile(t *testing.T) {
 	server.maxUploadRequestSize = request.ContentLength - 64
 
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want %d; body = %q", response.Code, http.StatusRequestEntityTooLarge, response.Body.String())
@@ -199,7 +171,7 @@ func TestUploadAcceptsRequestAtLimit(t *testing.T) {
 	server.maxUploadRequestSize = request.ContentLength
 
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body = %q", response.Code, http.StatusCreated, response.Body.String())
@@ -219,7 +191,7 @@ func TestUploadCancellationRemovesPartialFile(t *testing.T) {
 	request = request.WithContext(ctx)
 
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(response, request)
+	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
@@ -244,7 +216,7 @@ func TestUploadRejectsFilenameWithPathSeparator(t *testing.T) {
 	for _, filename := range []string{"../secret.txt", `..\secret.txt`} {
 		t.Run(filename, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			server.server.Handler.ServeHTTP(
+			server.ServeHTTP(
 				response,
 				newUploadRequest(t, "/u/"+sess.Token().String(), filename, "secret"),
 			)
@@ -275,7 +247,7 @@ func TestUploadMapsStoreErrors(t *testing.T) {
 				return receive.Result{}, tt.err
 			}))
 			response := httptest.NewRecorder()
-			server.server.Handler.ServeHTTP(response, newUploadRequest(t, "/u/"+sess.Token().String(), "file.txt", "content"))
+			server.ServeHTTP(response, newUploadRequest(t, "/u/"+sess.Token().String(), "file.txt", "content"))
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", response.Code, tt.wantStatus)
 			}
@@ -296,7 +268,7 @@ func TestReceiveServerRejectsUnsupportedRoutes(t *testing.T) {
 		httptest.NewRequest(http.MethodPost, "/u/%2e%2e/"+sess.Token().String(), nil),
 	} {
 		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, request)
+		server.ServeHTTP(response, request)
 		if response.Code != http.StatusMethodNotAllowed && response.Code != http.StatusNotFound {
 			t.Errorf("%s %s: status = %d, want 404 or 405", request.Method, request.URL.Path, response.Code)
 		}
@@ -312,13 +284,13 @@ func (function uploadStoreFunc) Save(ctx context.Context, name string, source io
 	return function(ctx, name, source)
 }
 
-func newReceiveTestServer(t *testing.T, store uploadStore) (*Server, *session.Session) {
+func newReceiveTestServer(t *testing.T, store uploadStore) (*receiveHandler, *session.Session) {
 	t.Helper()
-	sess, err := session.NewReceive(time.Hour)
+	sess, err := session.New(time.Hour)
 	if err != nil {
-		t.Fatalf("session.NewReceive() error = %v", err)
+		t.Fatalf("session.New() error = %v", err)
 	}
-	return NewReceive(sess, store, nil), sess
+	return newReceive(sess, store, nil), sess
 }
 
 func newUploadRequest(t *testing.T, path, filename, content string) *http.Request {

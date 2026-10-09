@@ -47,7 +47,10 @@ func openNixOSIPTables(
 	addArgs := append([]string{"-w", "-I", nixOSFirewallTable, "1"}, ruleArgs...)
 	result := runner.run(ctx, executable, addArgs...)
 	if result.err != nil {
-		return nil, commandError("add qshare iptables rule", result)
+		lease := &iptablesLease{runner: runner, executable: executable, ruleArgs: ruleArgs}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), helperCleanupTimeout)
+		defer cancel()
+		return nil, errors.Join(firewallSetupError(ctx, "add qshare iptables rule", result), lease.Close(cleanupCtx))
 	}
 	return &iptablesLease{runner: runner, executable: executable, ruleArgs: ruleArgs}, nil
 }

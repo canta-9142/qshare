@@ -94,14 +94,6 @@ func isValidInterface(iface net.Interface) bool {
 	return true
 }
 
-func firstIPv4Address(iface net.Interface) (netip.Addr, bool) {
-	prefix, ok := firstIPv4Prefix(iface)
-	if !ok {
-		return netip.Addr{}, false
-	}
-	return prefix.Addr(), true
-}
-
 func firstIPv4Prefix(iface net.Interface) (netip.Prefix, bool) {
 	addrs, err := iface.Addrs()
 	if err != nil {

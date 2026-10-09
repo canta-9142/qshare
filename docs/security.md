@@ -32,10 +32,24 @@ Only paths explicitly selected by the CLI may enter a send session. Validation
 finishes before the server starts.
 
 - The selected final file component must be a regular file, not a symlink.
+  The opened handle is checked again, and opening does not wait for a writer
+  if a regular file is replaced by a FIFO between validation and open.
 - Browser routes use opaque resource IDs, never local paths or filenames.
 - Duplicate filenames do not merge authorization.
 - ZIP entry names are sanitized and cannot be absolute or contain traversal.
+  Each name component replaces `/`, `\`, `:`, and NUL with `_`; empty names,
+  `.` and `..` become `_`. Trailing ASCII spaces and periods are removed;
+  names that become empty become `_`. Windows device names (including names
+  with extensions) receive an `_` prefix. Collisions after sanitization are
+  compared using Unicode lowercase and receive ` (n)` suffixes.
+  Directory archives apply this to the root and each descendant, with files
+  and directories sharing collision tracking within each parent.
+  This does not guarantee compatibility with every extraction filesystem's
+  character restrictions, Unicode normalization, or path length limits.
 - Files and archives are streamed and stop on request cancellation.
+- ZIP archives are finalized only after every entry succeeds. Generation or
+  finalization failures abort the HTTP transfer so an incomplete archive is not
+  reported as a successful download.
 
 ## Shared directories
 
@@ -43,13 +57,33 @@ Directory authorization is frozen at startup. Hidden descendants, symlinks,
 and non-regular entries are excluded. Each included node stores an opaque ID,
 relative hierarchy, and filesystem identity.
 
+The selected root cannot be a symlink, including when its path ends in `/`.
+qshare keeps handles to the root and every included file and directory until
+session cleanup, preventing deletion and inode reuse from making a replacement
+object pass the identity check. These handles pin identity, not file contents;
+downloads still reopen and verify the current authorized path.
+
 Before serving a file, qshare reopens it from the authorized root without
-following symlinks and verifies that it is the same filesystem object. Added,
-renamed, missing, or replaced entries are not served. The same checks apply
-while creating a directory archive.
+following symlinks. Each node, including the root and every intermediate
+directory, is checked for its startup-time type and filesystem identity using
+the opened handle before opening the next node relative to that handle. Added,
+renamed, missing, or replaced entries are not served, even if a replacement
+directory contains a hard link to the original file. Individual downloads and
+directory archive creation use the same reopening checks.
+
+Checks apply as each node is reopened. They do not form an atomic filesystem
+snapshot: a node may be renamed or removed after its handle is verified, and
+an already opened download may continue using that same object. In-place file
+content changes remain visible; the tree and file contents are not locked
+throughout a request or archive transfer. Browser navigation shows the frozen
+startup metadata.
 
 Directory limits bound startup work and in-memory metadata: 1,000 regular
-files, 2,000 encountered entries, and depth 20.
+files, 2,000 encountered entries, and depth 20. Directory sharing retains at
+most 2,001 handles, including the root; reopening resources and running the
+server require additional descriptors. If the process cannot open enough
+handles during validation, startup fails and closes all acquired handles
+without publishing a partial tree or changing the process descriptor limit.
 
 ## Uploads
 
@@ -98,6 +132,17 @@ The server binds to the selected LAN IPv4 address on a random TCP port from
 limited to the selected interface, source subnet, destination address, and
 port. HTTPS, Direct Mode, captive portals, and automatic hotspot cleanup are
 not part of the current implementation.
+
+Firewall cancellation must preserve ownership boundaries. Firewalld insertions
+allow authentication while startup is active, then receive a five-second grace
+period after cancellation to report ownership before cleanup. Preexisting or
+concurrently added rules are left untouched. An insertion whose
+result cannot be confirmed is reported as a failure and retains its native
+expiry as a fallback. NixOS helper commands are canceled on parent EOF, signals,
+or expiry, and partial cleanup has an independent five-second limit. Cleanup
+failures are reported alongside the original error. If an nftables insertion
+does not provide a usable handle, its owned source set is emptied to stop the
+rule matching; empty objects may remain until manual cleanup.
 
 ## Verification
 

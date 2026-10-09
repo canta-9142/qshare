@@ -15,14 +15,6 @@ type Endpoint struct {
 	Interface string
 }
 
-func AdvertiseAddress() (netip.Addr, error) {
-	endpoint, err := AdvertiseEndpoint()
-	if err != nil {
-		return netip.Addr{}, err
-	}
-	return endpoint.Address, nil
-}
-
 func AdvertiseEndpoint() (Endpoint, error) {
 	return advertiseEndpoint()
 }

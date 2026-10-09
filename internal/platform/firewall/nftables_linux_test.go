@@ -4,6 +4,7 @@ package firewall
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -18,6 +19,38 @@ func TestNFTRuleHandle(t *testing.T) {
 	}
 	if _, ok := nftRuleHandle(output, "qshare:other"); ok {
 		t.Fatal("nftRuleHandle() found unrelated rule")
+	}
+}
+
+func TestNFTRuleHandleResponseFormat(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		handle uint64
+		ok     bool
+	}{
+		{"multiple objects", `{"nftables":[{"metainfo":{"json_schema_version":1}},{"add":{"rule":{"comment":"other","handle":1}}},{"add":{"rule":{"comment":"owned","handle":42}}}]}`, 42, true},
+		{"zero handle", `{"nftables":[{"add":{"rule":{"comment":"owned","handle":0}}}]}`, 0, true},
+		{"maximum handle", `{"nftables":[{"add":{"rule":{"comment":"owned","handle":18446744073709551615}}}]}`, ^uint64(0), true},
+		{"missing handle", `{"nftables":[{"add":{"rule":{"comment":"owned"}}}]}`, 0, false},
+		{"null handle", `{"nftables":[{"add":{"rule":{"comment":"owned","handle":null}}}]}`, 0, false},
+		{"string handle", `{"nftables":[{"add":{"rule":{"comment":"owned","handle":"42"}}}]}`, 0, false},
+		{"negative handle", `{"nftables":[{"add":{"rule":{"comment":"owned","handle":-1}}}]}`, 0, false},
+		{"fractional handle", `{"nftables":[{"add":{"rule":{"comment":"owned","handle":1.5}}}]}`, 0, false},
+		{"overflow handle", `{"nftables":[{"add":{"rule":{"comment":"owned","handle":18446744073709551616}}}]}`, 0, false},
+		{"unrelated object", `{"nftables":[{"add":{"set":{"comment":"owned","handle":42}}}]}`, 0, false},
+		{"nested fields", `{"nftables":[{"add":{"rule":{"expr":[{"comment":"owned","handle":42}]}}}]}`, 0, false},
+		{"unwrapped rule", `{"nftables":[{"rule":{"comment":"owned","handle":42}}]}`, 0, false},
+		{"empty response", `{}`, 0, false},
+		{"invalid JSON", `{"nftables":`, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handle, ok := nftRuleHandle(tt.output, "owned")
+			if handle != tt.handle || ok != tt.ok {
+				t.Fatalf("nftRuleHandle() = %d, %v; want %d, %v", handle, ok, tt.handle, tt.ok)
+			}
+		})
 	}
 }
 
@@ -80,5 +113,51 @@ func TestOpenNixOSNFTablesFailsClosedWithoutHandle(t *testing.T) {
 		"flush", "set", "inet", "nixos-fw", "qshare_0123456789abcdef",
 	}) {
 		t.Fatalf("cleanup call = %#v", runner.calls)
+	}
+}
+
+func TestNftablesPartialFailurePreservesCleanupErrors(t *testing.T) {
+	setupFailure := errors.New("nft setup failed")
+	cleanupFailure := errors.New("nft cleanup failed")
+	for _, stage := range []string{"source", "rule", "handle", "cancel"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			results := []commandResult{{}, {err: setupFailure}, {err: cleanupFailure}}
+			cleanupAction := "delete"
+			if stage == "rule" || stage == "handle" {
+				results = []commandResult{{}, {}, {err: setupFailure}, {err: cleanupFailure}}
+				cleanupAction = "flush"
+			}
+			if stage == "handle" {
+				results[2] = commandResult{output: `{}`}
+			}
+			runner := &fakeRunner{
+				results: results,
+				onRun: func(commandCtx context.Context, args []string) {
+					if stage == "cancel" && slices.Equal(args[:2], []string{"add", "element"}) {
+						cancel()
+					}
+					if args[0] == cleanupAction {
+						assertFirewallCleanupContext(t, commandCtx)
+					}
+				},
+			}
+			request := helperRequest{rule: testRule(), expires: time.Now().Add(time.Minute), leaseID: "0123456789abcdef"}
+			_, err := openNixOSNFTables(ctx, runner, request)
+			if !errors.Is(err, cleanupFailure) {
+				t.Fatalf("cleanup failure was lost: %v", err)
+			}
+			if stage == "cancel" {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("cancellation was lost: %v", err)
+				}
+			} else if stage != "handle" && !errors.Is(err, setupFailure) {
+				t.Fatalf("setup failure was lost: %v", err)
+			}
+			if len(runner.calls) != len(results) || runner.calls[len(results)-1].args[0] != cleanupAction {
+				t.Fatalf("unexpected cleanup commands: %v", runner.calls)
+			}
+		})
 	}
 }

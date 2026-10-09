@@ -2,12 +2,14 @@
 
 ## Environment
 
-qshare requires Go 1.24 or newer and Git. Confirm that both are available:
+Building and testing qshare requires Go 1.24 or newer. Confirm that it is available:
 
 ```sh
 go version
-git --version
 ```
+
+Git is required for repository operations and the release script, but not for
+building or testing qshare.
 
 No environment manager or system-wide service is required. All development,
 testing, static analysis, and local builds use the standard Go toolchain.

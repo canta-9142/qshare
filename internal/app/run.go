@@ -1,408 +1,184 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/platform/clipboard"
-	"github.com/canta-9142/qshare/internal/platform/firewall"
-	"github.com/canta-9142/qshare/internal/platform/network"
 	"github.com/canta-9142/qshare/internal/receive"
+	"github.com/canta-9142/qshare/internal/server"
 	"github.com/canta-9142/qshare/internal/session"
+	"github.com/canta-9142/qshare/internal/share"
 )
 
-type sessionEnd uint8
+func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
+	var run sessionRun
+	end := sessionEnded
+	defer func() { runErr = run.finish(ctx, end, runErr) }()
 
-const (
-	sessionEnded sessionEnd = iota
-	sessionShutdownRequested
-)
-
-func (a *Application) Run(ctx context.Context, req Request) error {
-	switch req.Operation {
-	case OperationSendFile:
-		return a.runSendFile(ctx, req)
-	case OperationSendDirectory:
-		return a.runSendDirectory(ctx, req)
-
-	case OperationSendText:
-		return a.runSendText(ctx, req)
-
-	case OperationReceive:
-		return a.runReceive(ctx, req)
-
-	default:
-		return fmt.Errorf("unsupported operation: %d", req.Operation)
-	}
-}
-
-func (a *Application) runSendDirectory(ctx context.Context, req Request) (runErr error) {
-	if len(req.Paths) != 1 {
-		return fmt.Errorf("directory send requires exactly one path")
-	}
-	directory, err := a.openDirectory(req.Paths[0])
-	if err != nil {
+	if err := a.prepareSession(req, &run); err != nil {
 		return err
 	}
-	defer func() {
-		if err := directory.Close(); err != nil {
-			runErr = errors.Join(runErr, fmt.Errorf("failed to close directory: %w", err))
-		}
-	}()
-	sess, err := session.NewSendDirectory(directory, req.Lifetime)
-	if err != nil {
-		return err
-	}
-	_, err = a.runPreparedSession(ctx, sess, a.newDirectoryServer, fmt.Sprintf("Sharing directory  %s", directory.Root().Name()), req.Lifetime, req.Port)
-	return err
-}
-
-func (a *Application) runSendFile(ctx context.Context, req Request) (runErr error) {
-	resources, err := a.openCollection(req.Paths)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err := resources.Close(); err != nil {
-			runErr = errors.Join(
-				runErr,
-				fmt.Errorf("failed to close resource: %w", err),
-			)
-		}
-	}()
-
-	sess, err := session.NewSendFiles(resources, req.Lifetime)
-	if err != nil {
-		return err
-	}
-
-	_, err = a.runPreparedSession(ctx, sess, a.newSendServer, fmt.Sprintf("Sharing  %d file(s)", len(resources.Resources())), req.Lifetime, req.Port)
-	return err
-}
-
-func (a *Application) runSendText(ctx context.Context, req Request) error {
-	sess, err := session.NewSendText(req.Text, req.Lifetime)
-	if err != nil {
-		return err
-	}
-
-	_, err = a.runPreparedSession(ctx, sess, a.newTextServer, "Sharing text", req.Lifetime, req.Port)
-	return err
-}
-
-func (a *Application) runReceive(ctx context.Context, req Request) error {
-	var textSink receive.TextSink = receive.NewWriterTextSink(a.stdout)
-	if req.Clipboard != "" {
-		var err error
-		textSink, err = a.newClipboardSink(req.Clipboard)
-		if err != nil {
-			if req.Clipboard == "auto" && errors.Is(err, clipboard.ErrBackendNotFound) {
-				fmt.Fprintln(a.stderr, "Clipboard backend not found; received text will be written to stdout.")
-				textSink = receive.NewWriterTextSink(a.stdout)
-			} else if errors.Is(err, ErrInvalidRequest) {
-				return err
-			} else {
-				return fmt.Errorf("configure clipboard backend: %w", err)
-			}
-		}
-	}
-
-	store, err := a.openReceiveStore(req.ReceiveDir)
-	if err != nil {
-		return fmt.Errorf("open receive store: %w", err)
-	}
-
-	sess, err := session.NewReceive(req.Lifetime)
-	if err != nil {
-		return err
-	}
-
-	textProcessor := receive.NewTextProcessor(
-		textSink,
-		receive.TextQueueCapacity,
-	)
-	textProcessorStopped := false
-	defer func() {
-		if !textProcessorStopped {
-			textProcessor.Close()
-		}
-	}()
-
-	newServer := func(sess *session.Session) sessionServer {
-		return a.newReceiveServer(sess, store, textProcessor)
-	}
-	end, err := a.runPreparedSession(ctx, sess, newServer, "Receiving into "+req.ReceiveDir, req.Lifetime, req.Port)
-	if err != nil || end != sessionShutdownRequested {
-		return err
-	}
-
-	err = shutdownTextProcessor(ctx, textProcessor)
-	textProcessorStopped = true
-	return err
-}
-
-func (a *Application) runPreparedSession(
-	ctx context.Context,
-	sess *session.Session,
-	newServer func(*session.Session) sessionServer,
-	heading string,
-	lifetime time.Duration,
-	requestedPort uint16,
-) (sessionEnd, error) {
 	endpoint, err := a.advertiseEndpoint()
 	if err != nil {
-		return sessionEnded, fmt.Errorf("failed to determine LAN advertise address: %w", err)
+		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
-
-	srv, port, err := a.startLANServer(ctx, endpoint, sess, newServer(sess), requestedPort)
+	startupCtx, cancelStartup := context.WithDeadline(ctx, run.session.ExpiresAt())
+	defer cancelStartup()
+	port, err := a.prepareLANServer(startupCtx, endpoint, &run, req.Port)
+	if err == nil {
+		err = startupCtx.Err()
+	}
 	if err != nil {
-		return sessionEnded, fmt.Errorf("failed to start server: %w", err)
+		if onlyStartupCancellation(err, startupCtx.Err()) {
+			if cause := context.Cause(ctx); cause != nil {
+				return cause
+			}
+			end = sessionExpired
+			return nil
+		}
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, startupCtx.Err()) {
+			err = errors.Join(cause, err)
+		}
+		return fmt.Errorf("failed to start server: %w", err)
 	}
 
 	accessURLValue := url.URL{
 		Scheme: "http",
-		Host:   net.JoinHostPort(endpoint.Address.String(), port),
-		Path:   "/s/" + sess.Token().String(),
+		Host:   net.JoinHostPort(endpoint.Address.String(), strconv.Itoa(int(port))),
+		Path:   "/s/" + run.session.Token().String(),
 	}
 	accessURL := accessURLValue.String()
-
-	fmt.Fprintf(a.stderr, "\nQshare\n\n%s\n\n", heading)
-	if err := a.renderQR(a.stderr, accessURL); err != nil {
-		return sessionEnded, errors.Join(
-			fmt.Errorf("failed to render QR code: %w", err),
-			srv.Close(),
-		)
+	var display bytes.Buffer
+	fmt.Fprintf(&display, "\nQshare\n\n%s\n\n", run.heading)
+	if err := a.renderQR(&display, accessURL); err != nil {
+		return fmt.Errorf("failed to render QR code: %w", err)
 	}
-
-	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL, lifetime)
-	if err := a.enableInteractiveShutdown(srv); err != nil {
-		return sessionEnded, err
+	fmt.Fprintf(&display, "\n%s\n\nThis URL expires at %s.\n\n", accessURL, run.session.ExpiresAt().Format(time.RFC3339))
+	// Include QR generation in startup, and check validity before publishing it.
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
 	}
-
-	return a.runSession(ctx, sess, srv)
-}
-
-func (a *Application) enableInteractiveShutdown(srv sessionServer) error {
-	if a.startShutdownListener == nil {
+	if !time.Now().Before(run.session.ExpiresAt()) {
+		end = sessionExpired
 		return nil
 	}
-	shutdownRequested, err := a.startShutdownListener()
-	if err != nil {
-		return errors.Join(fmt.Errorf("configure quit key: %w", err), srv.Close())
+	run.serve()
+	if _, err := display.WriteTo(a.stderr); err != nil {
+		return fmt.Errorf("failed to display session: %w", err)
 	}
-	a.shutdownRequested = shutdownRequested
-	if shutdownRequested != nil {
-		fmt.Fprint(a.stderr, "Press q to quit.\n\n")
+
+	var shutdownRequested <-chan struct{}
+	if a.startShutdownListener != nil {
+		var restore func() error
+		shutdownRequested, restore, err = a.startShutdownListener()
+		if err != nil {
+			return fmt.Errorf("configure quit key: %w", err)
+		}
+		run.watchTerminal(ctx, restore)
+		if shutdownRequested != nil {
+			fmt.Fprint(a.stderr, "Press q to quit.\n\n")
+		}
+	}
+	end, runErr = run.wait(ctx, shutdownRequested)
+	return runErr
+}
+
+// onlyStartupCancellation must not discard other failures joined with cancellation.
+func onlyStartupCancellation(err, cancellation error) bool {
+	if err == nil || cancellation == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		for _, child := range children {
+			if !onlyStartupCancellation(child, cancellation) {
+				return false
+			}
+		}
+		return len(children) > 0
+	}
+	if wrapped := errors.Unwrap(err); wrapped != nil {
+		return onlyStartupCancellation(wrapped, cancellation)
+	}
+	return err == cancellation
+}
+
+// prepareSession records each acquired resource before the next fallible step.
+// All modes return through Run's common cleanup, including preparation failures.
+func (a *Application) prepareSession(req Request, run *sessionRun) (err error) {
+	switch req.Operation {
+	case OperationSendPaths:
+		run.files, run.directory, err = a.openPaths(req.Paths)
+		if err != nil {
+			if errors.Is(err, share.ErrInvalidSelection) {
+				return invalidRequest(err)
+			}
+			return err
+		}
+		run.session, err = session.New(req.Lifetime)
+		if err != nil {
+			return err
+		}
+		if run.directory != nil {
+			run.server = server.NewHTTPServer(server.NewSendDirectory(run.session, run.directory))
+			run.heading = fmt.Sprintf("Sharing directory  %s", run.directory.Root().Name())
+		} else {
+			run.server = server.NewHTTPServer(server.NewSendFile(run.session, run.files))
+			run.heading = fmt.Sprintf("Sharing  %d file(s)", len(run.files.Resources()))
+		}
+
+	case OperationSendText:
+		run.session, err = session.New(req.Lifetime)
+		if err != nil {
+			return err
+		}
+		run.server = server.NewHTTPServer(server.NewSendText(run.session, req.Text))
+		run.heading = "Sharing text"
+
+	case OperationReceive:
+		sink, err := a.receiveTextSink(req.Clipboard)
+		if err != nil {
+			return err
+		}
+		store, err := a.openReceiveStore(req.ReceiveDir)
+		if err != nil {
+			return fmt.Errorf("open receive store: %w", err)
+		}
+		run.session, err = session.New(req.Lifetime)
+		if err != nil {
+			return err
+		}
+		run.textProcessor = receive.NewTextProcessor(sink, receive.TextQueueCapacity)
+		run.server = server.NewHTTPServer(server.NewReceive(run.session, store, run.textProcessor))
+		run.heading = "Receiving into " + req.ReceiveDir
+
+	default:
+		return fmt.Errorf("unsupported operation: %d", req.Operation)
 	}
 	return nil
 }
 
-// startLANServer binds the requested port or an available random port and opens its temporary firewall rule.
-func (a *Application) startLANServer(
-	ctx context.Context,
-	endpoint network.Endpoint,
-	sess *session.Session,
-	srv sessionServer,
-	requestedPort uint16,
-) (sessionServer, string, error) {
-	initialPort := requestedPort
-	attempts := 1
-	var err error
-	if requestedPort == 0 {
-		initialPort, err = a.selectServerPort()
-		if err != nil {
-			return nil, "", err
-		}
-		if initialPort < minimumServerPort || initialPort >= minimumServerPort+serverPortCount {
-			return nil, "", fmt.Errorf("selected server port %d is outside the configured range", initialPort)
-		}
-		attempts = serverPortAttempts
+func (a *Application) receiveTextSink(backend string) (receive.TextSink, error) {
+	if backend == "" {
+		return receive.NewWriterTextSink(a.stdout), nil
 	}
-
-	var listenAddr net.Addr
-	// A random starting point keeps normal selection unpredictable. Advancing
-	// within the range guarantees that collision retries do not repeat a port.
-	for attempt := 0; attempt < attempts; attempt++ {
-		port := int(initialPort)
-		if requestedPort == 0 {
-			port = minimumServerPort + (port-minimumServerPort+attempt)%serverPortCount
-		}
-		bindAddr := net.JoinHostPort(endpoint.Address.String(), strconv.FormatUint(uint64(port), 10))
-		listenAddr, err = srv.Start(bindAddr)
-		if err == nil {
-			break
-		}
-		if requestedPort != 0 {
-			return nil, "", fmt.Errorf("listen on port %d: %w", requestedPort, err)
-		}
-		if !errors.Is(err, syscall.EADDRINUSE) {
-			return nil, "", err
-		}
-	}
+	sink, err := a.newClipboardSink(backend)
 	if err != nil {
-		return nil, "", fmt.Errorf(
-			"failed to find an available port in %d-%d after %d attempts: %w",
-			minimumServerPort,
-			minimumServerPort+serverPortCount-1,
-			serverPortAttempts,
-			err,
-		)
-	}
-
-	_, portText, err := net.SplitHostPort(listenAddr.String())
-	if err != nil {
-		return nil, "", errors.Join(
-			fmt.Errorf("failed to parse listen address: %w", err),
-			srv.Close(),
-		)
-	}
-	port, err := strconv.ParseUint(portText, 10, 16)
-	if err != nil || port == 0 {
-		if err == nil {
-			err = errors.New("port must not be zero")
+		if backend == "auto" && errors.Is(err, clipboard.ErrBackendNotFound) {
+			fmt.Fprintln(a.stderr, "Clipboard backend not found; received text will be written to stdout.")
+			return receive.NewWriterTextSink(a.stdout), nil
 		}
-		return nil, "", errors.Join(
-			fmt.Errorf("failed to parse listen port %q: %w", portText, err),
-			srv.Close(),
-		)
-	}
-
-	lease, err := a.openFirewall(ctx, firewall.Rule{
-		Interface:   endpoint.Interface,
-		Source:      endpoint.Prefix,
-		Destination: endpoint.Address,
-		Port:        uint16(port),
-		Timeout:     time.Until(sess.ExpiresAt()) + expirationDrainTimeout + firewallTimeoutSlack,
-	})
-	if err != nil {
-		return nil, "", errors.Join(
-			fmt.Errorf("failed to configure firewall: %w", err),
-			srv.Close(),
-		)
-	}
-
-	return &firewalledSessionServer{
-		sessionServer: srv,
-		lease:         lease,
-	}, portText, nil
-}
-
-// firewalledSessionServer couples HTTP shutdown with firewall cleanup.
-type firewalledSessionServer struct {
-	sessionServer
-	lease firewallLease
-}
-
-// Shutdown gracefully stops HTTP traffic and removes the firewall rule.
-func (s *firewalledSessionServer) Shutdown(ctx context.Context) error {
-	return errors.Join(s.sessionServer.Shutdown(ctx), s.closeFirewall())
-}
-
-// Close immediately stops HTTP traffic and removes the firewall rule.
-func (s *firewalledSessionServer) Close() error {
-	return errors.Join(s.sessionServer.Close(), s.closeFirewall())
-}
-
-// closeFirewall bounds cleanup independently from the session context.
-func (s *firewalledSessionServer) closeFirewall() error {
-	ctx, cancel := context.WithTimeout(context.Background(), firewallCleanupTimeout)
-	defer cancel()
-	if err := s.lease.Close(ctx); err != nil {
-		return fmt.Errorf("remove temporary firewall rule: %w", err)
-	}
-	return nil
-}
-
-func (a *Application) runSession(ctx context.Context, sess *session.Session, srv sessionServer) (sessionEnd, error) {
-	timer := time.NewTimer(time.Until(sess.ExpiresAt()))
-	defer timer.Stop()
-
-	select {
-	case <-timer.C:
-		// Expiration
-		if err := shutdownExpiredServer(srv, expirationDrainTimeout); err != nil {
-			return sessionEnded, fmt.Errorf("failed to shutdown server: %w", err)
+		if errors.Is(err, ErrInvalidRequest) {
+			return nil, err
 		}
-		return sessionEnded, nil
-
-	case <-a.shutdownRequested:
-		// Interactive normal shutdown
-		if err := shutdownRequestedServer(ctx, srv, expirationDrainTimeout); err != nil {
-			return sessionShutdownRequested, fmt.Errorf("failed to shutdown server: %w", err)
-		}
-		return sessionShutdownRequested, nil
-
-	case <-ctx.Done():
-		// SIGINT/SIGTERM
-		closeErr := srv.Close()
-		return sessionEnded, errors.Join(
-			context.Cause(ctx),
-			closeErr,
-		)
-
-	case err := <-srv.Done():
-		// Server error
-		if closeErr := srv.Close(); closeErr != nil {
-			err = errors.Join(err, closeErr)
-		}
-		if err != nil {
-			return sessionEnded, fmt.Errorf("HTTP server error: %w", err)
-		}
-		return sessionEnded, nil
+		return nil, fmt.Errorf("configure clipboard backend: %w", err)
 	}
-}
-
-func shutdownExpiredServer(srv shutdownServer, timeout time.Duration) error {
-	return shutdownSessionServer(context.Background(), srv, timeout)
-}
-
-func shutdownRequestedServer(ctx context.Context, srv shutdownServer, timeout time.Duration) error {
-	return shutdownSessionServer(ctx, srv, timeout)
-}
-
-func shutdownSessionServer(parent context.Context, srv shutdownServer, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-
-	err := srv.Shutdown(ctx)
-	if err == nil {
-		return nil
-	}
-
-	closeErr := srv.Close()
-	if cause := context.Cause(parent); cause != nil {
-		return errors.Join(cause, closeErr)
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		if closeErr != nil {
-			return fmt.Errorf("force close server after drain timeout: %w", closeErr)
-		}
-		return nil
-	}
-
-	return errors.Join(err, closeErr)
-}
-
-func shutdownTextProcessor(ctx context.Context, processor *receive.TextProcessor) error {
-	done := make(chan struct{})
-	go func() {
-		processor.Shutdown()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		processor.Close()
-		<-done
-		return context.Cause(ctx)
-	}
+	return sink, nil
 }

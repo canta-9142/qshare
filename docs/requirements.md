@@ -29,6 +29,11 @@ Every operation creates a temporary session with a cryptographically secure
 256-bit token. The QR code and displayed URL contain that token.
 
 - The default lifetime is 10 minutes and `--expire` may change it.
+- The lifetime starts when the session is created, including firewall setup.
+  QR generation also counts toward the lifetime. Expiration cancels setup;
+  validity is checked before HTTP starts and the QR code and URL are written.
+  If that check finds expiration, acquired resources are released without
+  displaying the session. The display includes the actual expiry timestamp.
 - Downloads and submissions do not end a session.
 - Expiration stops new requests and gives active requests up to 30 seconds to
   finish before they are closed.
@@ -65,6 +70,14 @@ Hidden descendants, symlinks, and non-regular files are excluded. Objects
 added later are not shared; missing, renamed, or replaced authorized objects
 are not served. Changes to the contents of the same regular file are visible
 when it is downloaded.
+
+The selected directory cannot be a symlink, even with a trailing `/`. The
+session retains one open handle per authorized object, including the root
+(at most 2,001), plus descriptors for requests and the server. An insufficient
+process descriptor limit fails startup and releases all acquired handles.
+Identity is verified as each node is reopened; later renames or removals may
+leave an already opened transfer running. This is not an atomic snapshot of
+the filesystem or file contents.
 
 ## Send text
 

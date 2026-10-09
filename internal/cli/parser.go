@@ -22,10 +22,6 @@ type parseResult struct {
 	Code    int
 }
 
-func parse(argv []string, stdout io.Writer, stderr io.Writer) (parseResult, error) {
-	return parseWithInput(argv, stdinInput{terminal: true}, developmentVersion, stdout, stderr)
-}
-
 type stdinInput struct {
 	reader   io.Reader
 	terminal bool
@@ -80,10 +76,6 @@ func normalizeTextArguments(argv []string) []string {
 		}
 	}
 	return normalized
-}
-
-func mapArguments(args arguments) (parseResult, error) {
-	return mapArgumentsWithInput(args, stdinInput{terminal: true})
 }
 
 func mapArgumentsWithInput(args arguments, stdin stdinInput) (parseResult, error) {
@@ -203,32 +195,11 @@ func mapSend(args arguments) (parseResult, error) {
 		return parseResult{}, errors.New("--receive-dir cannot be used when sharing a file")
 	}
 
-	operation, err := classifySendPaths(args.Files)
-	if err != nil {
-		return parseResult{}, err
-	}
 	return parseResult{Request: app.Request{
-		Operation: operation,
+		Operation: app.OperationSendPaths,
 		Paths:     append([]string(nil), args.Files...),
 		Lifetime:  args.Expire,
 	}}, nil
-}
-
-func classifySendPaths(paths []string) (app.Operation, error) {
-	hasDirectory := false
-	for _, path := range paths {
-		info, err := os.Lstat(path)
-		if err == nil && info.IsDir() {
-			hasDirectory = true
-		}
-	}
-	if hasDirectory {
-		if len(paths) != 1 {
-			return 0, errors.New("a directory cannot be combined with another path")
-		}
-		return app.OperationSendDirectory, nil
-	}
-	return app.OperationSendFile, nil
 }
 
 func defaultReceiveDir() (string, error) {

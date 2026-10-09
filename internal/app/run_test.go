@@ -6,892 +6,664 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
+	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/canta-9142/qshare/internal/platform/clipboard"
 	"github.com/canta-9142/qshare/internal/platform/firewall"
-	platformnetwork "github.com/canta-9142/qshare/internal/platform/network"
+	"github.com/canta-9142/qshare/internal/platform/network"
 	"github.com/canta-9142/qshare/internal/receive"
-	"github.com/canta-9142/qshare/internal/session"
 	"github.com/canta-9142/qshare/internal/share"
 )
 
-func TestApplicationDirectoryValidationPrecedesServerCreation(t *testing.T) {
-	application := New(Dependencies{Stderr: io.Discard})
-	want := errors.New("walk failed")
-	application.openDirectory = func(string) (*share.Directory, error) { return nil, want }
-	created := false
-	application.newDirectoryServer = func(*session.Session) sessionServer { created = true; return nil }
-	err := application.Run(context.Background(), Request{Operation: OperationSendDirectory, Paths: []string{"dir"}, Lifetime: time.Hour})
-	if !errors.Is(err, want) {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if created {
-		t.Fatal("server created after directory validation failure")
+func TestApplicationModes(t *testing.T) {
+	for _, mode := range []string{"files", "directory", "text", "receive", "clipboard", "auto fallback"} {
+		t.Run(mode, func(t *testing.T) {
+			a, listener, stderr, path := newTestApplication(t)
+			var expiresAt time.Time
+			a.openFirewall = func(ctx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+				expiresAt, _ = ctx.Deadline()
+				return firewallLeaseFunc(func(context.Context) error { return nil }), nil
+			}
+			var stdout bytes.Buffer
+			a.stdout = &stdout
+			req := Request{Paths: []string{path}, Lifetime: time.Hour}
+			wantPage := "shared.txt"
+			switch mode {
+			case "directory":
+				req.Paths = []string{filepath.Dir(path)}
+			case "text":
+				req.Operation = OperationSendText
+				req.Text, _ = share.NewText([]byte("hello text"))
+				wantPage = "hello text"
+			case "receive", "clipboard", "auto fallback":
+				req.Operation, req.Paths = OperationReceive, nil
+				req.ReceiveDir = t.TempDir()
+				wantPage = ""
+				if mode == "clipboard" {
+					req.Clipboard = "xclip"
+					a.newClipboardSink = func(backend string) (receive.TextSink, error) {
+						if backend != "xclip" {
+							t.Errorf("backend = %q", backend)
+						}
+						return receive.NewWriterTextSink(&stdout), nil
+					}
+				}
+				if mode == "auto fallback" {
+					req.Clipboard = "auto"
+					a.newClipboardSink = func(string) (receive.TextSink, error) { return nil, clipboard.ErrBackendNotFound }
+				}
+			}
+			client := &http.Client{Timeout: 2 * time.Second}
+			var accessURL string
+			a.renderQR = func(dst io.Writer, payload string) error {
+				accessURL = payload
+				_, err := io.WriteString(dst, "QR code\n")
+				return err
+			}
+			checkTransfers := func(payload string) error {
+				if !strings.HasPrefix(payload, "http://192.0.2.10:55544/s/") {
+					t.Errorf("advertised URL = %q", payload)
+				}
+				remote := localURL(t, listener, payload)
+				response, err := client.Get(remote)
+				if err != nil {
+					return err
+				}
+				body, err := io.ReadAll(response.Body)
+				response.Body.Close()
+				if err != nil {
+					return err
+				}
+				if response.StatusCode != http.StatusOK || !strings.Contains(string(body), wantPage) {
+					t.Errorf("page status=%d body=%q", response.StatusCode, body)
+				}
+				if req.Operation == OperationReceive {
+					u, _ := url.Parse(remote)
+					token := strings.TrimPrefix(u.Path, "/s/")
+					u.Path = "/t/" + token
+					response, err = client.Post(u.String(), "text/plain", strings.NewReader("received text"))
+					if err != nil {
+						return err
+					}
+					response.Body.Close()
+					if response.StatusCode != http.StatusNoContent {
+						t.Errorf("submit status = %d", response.StatusCode)
+					}
+					var upload bytes.Buffer
+					form := multipart.NewWriter(&upload)
+					part, err := form.CreateFormFile("file", "uploaded.txt")
+					if err != nil {
+						return err
+					}
+					io.WriteString(part, "uploaded content")
+					form.Close()
+					u.Path = "/u/" + token
+					response, err = client.Post(u.String(), form.FormDataContentType(), &upload)
+					if err != nil {
+						return err
+					}
+					response.Body.Close()
+					if response.StatusCode != http.StatusCreated {
+						t.Errorf("upload status = %d", response.StatusCode)
+					}
+				}
+				return nil
+			}
+			restored := false
+			a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+				if !strings.Contains(stderr.String(), "QR code\n") {
+					t.Error("terminal initialized before QR")
+				}
+				if err := checkTransfers(accessURL); err != nil {
+					return nil, nil, err
+				}
+				quit := make(chan struct{})
+				close(quit)
+				return quit, func() error { restored = true; return nil }, nil
+			}
+			if err := a.Run(context.Background(), req); err != nil {
+				t.Fatal(err)
+			}
+			awaitLifecycle(t, listener.closed)
+			if !strings.Contains(stderr.String(), "This URL expires at "+expiresAt.Format(time.RFC3339)+".") {
+				t.Error("display did not include the session expiry timestamp")
+			}
+			if !restored || !strings.Contains(stderr.String(), "Press q to quit.") {
+				t.Error("interactive shutdown did not restore the terminal or print the quit hint")
+			}
+			if req.Operation == OperationReceive {
+				if stdout.String() != "received text" {
+					t.Errorf("received text = %q", stdout.String())
+				}
+				data, err := os.ReadFile(filepath.Join(req.ReceiveDir, "uploaded.txt"))
+				if err != nil || string(data) != "uploaded content" {
+					t.Errorf("uploaded file = %q, error=%v", data, err)
+				}
+			}
+			if mode == "auto fallback" && !strings.Contains(stderr.String(), "Clipboard backend not found") {
+				t.Error("missing clipboard fallback notice")
+			}
+		})
 	}
 }
 
-func TestApplicationRunExpiration(t *testing.T) {
-	application, fake, stderr, path := newTestApplication(t)
-	lease := &fakeFirewallLease{}
-	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
-		return lease, nil
-	}
-	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Millisecond})
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if fake.shutdownCalls != 1 || fake.closeCalls != 0 {
-		t.Fatalf("shutdown=%d close=%d", fake.shutdownCalls, fake.closeCalls)
-	}
-	if got := stderr.String(); !strings.Contains(got, "http://192.0.2.10:55544/s/") || !strings.Contains(got, "This URL expires after 1ms") {
-		t.Fatalf("stderr = %q", got)
-	}
-	if lease.closeCalls != 1 {
-		t.Errorf("firewall Close() calls = %d, want 1", lease.closeCalls)
+func TestApplicationStartupFailures(t *testing.T) {
+	for _, stage := range []string{"paths", "session", "clipboard", "receive store", "address", "port", "listen", "firewall", "QR", "display", "terminal", "serve"} {
+		t.Run(stage, func(t *testing.T) {
+			a, listener, _, path := newTestApplication(t)
+			want := errors.New(stage + " failed")
+			req := Request{Paths: []string{path}, Lifetime: time.Hour}
+			bound, firewallOpened, terminalStarted := false, false, false
+			a.listen = func(string, string) (net.Listener, error) { bound = true; return listener, nil }
+			firewallClosed := false
+			a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) {
+				firewallOpened = true
+				return firewallLeaseFunc(func(ctx context.Context) error {
+					select {
+					case <-listener.closed:
+					default:
+						t.Error("firewall removed before listener closed")
+					}
+					if ctx.Err() != nil {
+						t.Errorf("cleanup context: %v", ctx.Err())
+					}
+					if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > firewallCleanupTimeout {
+						t.Error("firewall cleanup deadline missing")
+					}
+					firewallClosed = true
+					return nil
+				}), nil
+			}
+			a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+				terminalStarted = true
+				return nil, nil, nil
+			}
+			switch stage {
+			case "paths":
+				a.openPaths = func([]string) (*share.Collection, *share.Directory, error) { return nil, nil, want }
+			case "session":
+				req.Lifetime = 0
+			case "clipboard":
+				req.Operation, req.Clipboard = OperationReceive, "wl-copy"
+				a.newClipboardSink = func(string) (receive.TextSink, error) { return nil, want }
+			case "receive store":
+				req.Operation = OperationReceive
+				a.openReceiveStore = func(string) (*receive.Store, error) { return nil, want }
+			case "address":
+				a.advertiseEndpoint = func() (network.Endpoint, error) { return network.Endpoint{}, want }
+			case "port":
+				a.selectServerPort = func() (uint16, error) { return 0, want }
+			case "listen":
+				a.listen = func(string, string) (net.Listener, error) { return nil, want }
+			case "firewall":
+				a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) { return nil, want }
+			case "QR":
+				a.renderQR = func(io.Writer, string) error { return want }
+			case "display":
+				a.stderr = writerFunc(func([]byte) (int, error) { return 0, want })
+			case "terminal":
+				a.startShutdownListener = func() (<-chan struct{}, func() error, error) { return nil, nil, want }
+			case "serve":
+				listener.acceptErr = want
+			}
+			err := a.Run(context.Background(), req)
+			if err == nil || (stage != "session" && !errors.Is(err, want)) {
+				t.Fatalf("Run() error = %v, want %v", err, want)
+			}
+			if bound {
+				awaitLifecycle(t, listener.closed)
+			}
+			if firewallOpened != firewallClosed {
+				t.Error("acquired firewall lease was not released")
+			}
+			if terminalStarted && stage != "serve" {
+				t.Error("terminal initialized after startup failure")
+			}
+		})
 	}
 }
 
-func TestApplicationRunCancellation(t *testing.T) {
-	application, fake, _, path := newTestApplication(t)
-	cause := errors.New("cancelled")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err := application.Run(ctx, Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cause", err)
+func TestApplicationInvalidPathSelection(t *testing.T) {
+	a, _, _, path := newTestApplication(t)
+	a.advertiseEndpoint = func() (network.Endpoint, error) {
+		t.Fatal("network setup started for invalid selection")
+		return network.Endpoint{}, nil
 	}
-	if fake.closeCalls != 1 {
-		t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
+	err := a.Run(t.Context(), Request{Paths: []string{path, filepath.Dir(path)}, Lifetime: time.Hour})
+	if !errors.Is(err, ErrInvalidRequest) || !errors.Is(err, share.ErrInvalidSelection) {
+		t.Fatalf("Run() error = %v, want invalid request wrapping invalid selection", err)
 	}
 }
 
-func TestApplicationRunInteractiveShutdown(t *testing.T) {
-	application, fake, stderr, path := newTestApplication(t)
-	shutdownRequested := make(chan struct{})
-	close(shutdownRequested)
-	qrRendered := false
-	application.renderQR = func(io.Writer, string) error {
-		qrRendered = true
-		return nil
-	}
-	application.startShutdownListener = func() (<-chan struct{}, error) {
-		if !qrRendered {
-			t.Fatal("shutdown listener started before QR rendering completed")
+func TestApplicationExpirationAndCancellation(t *testing.T) {
+	for _, expired := range []bool{true, false} {
+		a, listener, _, path := newTestApplication(t)
+		ctx, cancel := context.WithCancelCause(context.Background())
+		cause := errors.New("signal")
+		lifetime := time.Nanosecond
+		if !expired {
+			lifetime = time.Hour
+			cancel(cause)
 		}
-		return shutdownRequested, nil
-	}
-
-	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if fake.shutdownCalls != 1 || fake.closeCalls != 0 {
-		t.Fatalf("shutdown=%d close=%d, want shutdown=1 close=0", fake.shutdownCalls, fake.closeCalls)
-	}
-	if got := stderr.String(); !strings.Contains(got, "Press q to quit.") {
-		t.Fatalf("stderr = %q, want quit hint", got)
+		err := a.Run(ctx, Request{Paths: []string{path}, Lifetime: lifetime})
+		cancel(nil)
+		if expired && err != nil {
+			t.Fatalf("expiration error = %v", err)
+		}
+		if !expired && !errors.Is(err, cause) {
+			t.Fatalf("cancellation error = %v", err)
+		}
+		awaitLifecycle(t, listener.closed)
 	}
 }
 
-func TestApplicationInteractiveShutdownCanBeInterrupted(t *testing.T) {
-	application, fake, _, path := newTestApplication(t)
-	shutdownRequested := make(chan struct{})
-	close(shutdownRequested)
-	application.startShutdownListener = func() (<-chan struct{}, error) {
-		return shutdownRequested, nil
-	}
-	shutdownStarted := make(chan struct{})
-	fake.shutdown = func(ctx context.Context) error {
-		close(shutdownStarted)
-		<-ctx.Done()
-		return context.Cause(ctx)
-	}
-
-	cause := errors.New("interrupt graceful shutdown")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- application.Run(ctx, Request{Paths: []string{path}, Lifetime: time.Hour})
-	}()
-
-	<-shutdownStarted
-	cancel(cause)
-	if err := <-done; !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cancellation cause", err)
-	}
-	if fake.closeCalls != 1 {
-		t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
+func TestApplicationFirewallStartupExpirationAndCancellation(t *testing.T) {
+	for _, expired := range []bool{true, false} {
+		for _, lateSuccess := range []bool{true, false} {
+			t.Run(fmt.Sprintf("expired=%t/late success=%t", expired, lateSuccess), func(t *testing.T) {
+				a, listener, stderr, path := newTestApplication(t)
+				listener.acceptErr = errors.New("HTTP started after startup expired or was canceled")
+				ctx, cancel := context.WithCancelCause(t.Context())
+				defer cancel(nil)
+				cause := errors.New("signal during firewall setup")
+				lifetime := 50 * time.Millisecond
+				if !expired {
+					lifetime = time.Hour
+				}
+				leaseClosed := false
+				a.openFirewall = func(startupCtx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+					deadline, ok := startupCtx.Deadline()
+					if !ok || deadline.After(time.Now().Add(lifetime)) {
+						t.Fatal("firewall setup did not receive the session deadline")
+					}
+					if !expired {
+						cancel(cause)
+					}
+					select {
+					case <-startupCtx.Done():
+					case <-time.After(2 * time.Second):
+						t.Fatal("firewall setup was not canceled")
+					}
+					if !lateSuccess {
+						return nil, startupCtx.Err()
+					}
+					return firewallLeaseFunc(func(cleanupCtx context.Context) error {
+						if cleanupCtx.Err() != nil {
+							t.Errorf("firewall cleanup context: %v", cleanupCtx.Err())
+						}
+						select {
+						case <-listener.closed:
+						default:
+							t.Error("firewall removed before listener closed")
+						}
+						leaseClosed = true
+						return nil
+					}), nil
+				}
+				a.renderQR = func(io.Writer, string) error {
+					t.Error("QR rendered after startup expired or was canceled")
+					return nil
+				}
+				a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+					t.Error("terminal initialized after startup expired or was canceled")
+					return nil, nil, nil
+				}
+				err := a.Run(ctx, Request{Paths: []string{path}, Lifetime: lifetime})
+				if (expired && err != nil) || (!expired && !errors.Is(err, cause)) {
+					t.Fatalf("Run() error = %v, expired=%t", err, expired)
+				}
+				awaitLifecycle(t, listener.closed)
+				if leaseClosed != lateSuccess || stderr.Len() != 0 {
+					t.Fatalf("lease closed=%t, stderr=%q", leaseClosed, stderr)
+				}
+			})
+		}
 	}
 }
 
-func TestApplicationRunServerFailure(t *testing.T) {
-	application, fake, _, path := newTestApplication(t)
-	serveErr := errors.New("serve failed")
-	fake.done <- serveErr
-	close(fake.done)
-	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, serveErr) {
-		t.Fatalf("Run() error = %v, want server error", err)
-	}
-	if fake.closeCalls != 1 {
-		t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
+func TestApplicationStartupCancellationErrors(t *testing.T) {
+	failure := errors.New("helper cleanup failed")
+	for _, expired := range []bool{true, false} {
+		for _, tc := range []struct {
+			name string
+			err  func(error) error
+		}{
+			{"wrapped", func(err error) error { return fmt.Errorf("wait for helper: %w", err) }},
+			{"joined cancellation", func(err error) error { return errors.Join(err, fmt.Errorf("wait: %w", err)) }},
+			{"joined failure", func(err error) error { return fmt.Errorf("helper: %w", errors.Join(err, failure)) }},
+		} {
+			t.Run(fmt.Sprintf("expired=%t/%s", expired, tc.name), func(t *testing.T) {
+				a, listener, stderr, path := newTestApplication(t)
+				ctx, cancel := context.WithCancelCause(t.Context())
+				defer cancel(nil)
+				cause := errors.New("signal during startup")
+				lifetime := 10 * time.Millisecond
+				if !expired {
+					lifetime = time.Hour
+				}
+				a.openFirewall = func(startupCtx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+					if !expired {
+						cancel(cause)
+					}
+					awaitLifecycle(t, startupCtx.Done())
+					return nil, tc.err(startupCtx.Err())
+				}
+				err := a.Run(ctx, Request{Paths: []string{path}, Lifetime: lifetime})
+				if tc.name == "joined failure" {
+					if !errors.Is(err, failure) {
+						t.Fatalf("startup failure was lost: %v", err)
+					}
+				} else if expired && err != nil {
+					t.Fatalf("expiration error = %v", err)
+				}
+				if !expired && !errors.Is(err, cause) {
+					t.Fatalf("cancellation cause was lost: %v", err)
+				}
+				awaitLifecycle(t, listener.closed)
+				if stderr.Len() != 0 {
+					t.Fatalf("session displayed after startup failure: %q", stderr)
+				}
+			})
+		}
 	}
 }
 
-func TestApplicationRunClosesServerWhenQRRenderingFails(t *testing.T) {
-	application, fake, _, path := newTestApplication(t)
-	lease := &fakeFirewallLease{}
-	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
-		return lease, nil
+func TestApplicationExpirationAndCancellationDuringQRGeneration(t *testing.T) {
+	for _, expired := range []bool{true, false} {
+		t.Run(fmt.Sprintf("expired=%t", expired), func(t *testing.T) {
+			a, listener, stderr, path := newTestApplication(t)
+			listener.acceptErr = errors.New("HTTP started before QR generation finished")
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			cause := errors.New("signal during QR generation")
+			lifetime := 50 * time.Millisecond
+			if !expired {
+				lifetime = time.Hour
+			}
+			var startupCtx context.Context
+			leaseClosed := false
+			a.openFirewall = func(ctx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+				startupCtx = ctx
+				return firewallLeaseFunc(func(ctx context.Context) error {
+					leaseClosed = true
+					return ctx.Err()
+				}), nil
+			}
+			a.renderQR = func(dst io.Writer, _ string) error {
+				if _, err := io.WriteString(dst, "QR code\n"); err != nil {
+					return err
+				}
+				if !expired {
+					cancel(cause)
+				}
+				awaitLifecycle(t, startupCtx.Done())
+				return nil
+			}
+			a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+				t.Error("terminal initialized after QR generation expired or was canceled")
+				return nil, nil, nil
+			}
+			err := a.Run(ctx, Request{Paths: []string{path}, Lifetime: lifetime})
+			if (expired && err != nil) || (!expired && !errors.Is(err, cause)) {
+				t.Fatalf("Run() error = %v, expired=%t", err, expired)
+			}
+			awaitLifecycle(t, listener.closed)
+			if !leaseClosed || stderr.Len() != 0 {
+				t.Fatalf("lease closed=%t, stderr=%q", leaseClosed, stderr)
+			}
+		})
 	}
-	renderErr := errors.New("render failed")
-	application.renderQR = func(io.Writer, string) error { return renderErr }
-	listenerStarted := false
-	application.startShutdownListener = func() (<-chan struct{}, error) {
-		listenerStarted = true
+}
+
+func TestApplicationUnsupportedClipboardBackendIsInvalidRequest(t *testing.T) {
+	a := New(Dependencies{Stderr: io.Discard})
+	a.openReceiveStore = func(string) (*receive.Store, error) {
+		t.Error("receive store opened for an unsupported backend")
 		return nil, nil
 	}
-	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, renderErr) {
-		t.Fatalf("Run() error = %v, want render error", err)
-	}
-	if fake.closeCalls != 1 {
-		t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
-	}
-	if lease.closeCalls != 1 {
-		t.Errorf("firewall Close() calls = %d, want 1", lease.closeCalls)
-	}
-	if listenerStarted {
-		t.Fatal("shutdown listener started after QR rendering failed")
+	err := a.Run(context.Background(), Request{Operation: OperationReceive, Clipboard: "unsupported", Lifetime: time.Hour})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("Run() error = %v", err)
 	}
 }
 
-func TestApplicationClosesSessionWhenShutdownListenerFails(t *testing.T) {
-	application, fake, _, path := newTestApplication(t)
-	lease := &fakeFirewallLease{}
-	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
-		return lease, nil
-	}
-	want := errors.New("terminal failed")
-	application.startShutdownListener = func() (<-chan struct{}, error) {
-		return nil, want
-	}
-
-	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, want) {
-		t.Fatalf("Run() error = %v, want shutdown listener error", err)
-	}
-	if fake.closeCalls != 1 {
-		t.Errorf("server Close() calls = %d, want 1", fake.closeCalls)
-	}
-	if lease.closeCalls != 1 {
-		t.Errorf("firewall Close() calls = %d, want 1", lease.closeCalls)
-	}
-}
-
-func TestApplicationOpensFirewallBeforeRenderingAndClosesItWithServer(t *testing.T) {
-	application, _, _, path := newTestApplication(t)
-	lease := &fakeFirewallLease{}
-	var gotRule firewall.Rule
-	opened := false
-	application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewallLease, error) {
-		opened = true
-		gotRule = rule
-		return lease, nil
-	}
-	application.renderQR = func(io.Writer, string) error {
-		if !opened {
-			t.Fatal("QR rendered before firewall was configured")
+func TestApplicationRetriesPortAndUsesSelectedPort(t *testing.T) {
+	a, listener, _, path := newTestApplication(t)
+	a.selectServerPort = func() (uint16, error) { return 59999, nil }
+	var addresses []string
+	a.listen = func(network, address string) (net.Listener, error) {
+		if network != "tcp" {
+			t.Errorf("network = %q", network)
 		}
-		return nil
-	}
-
-	cause := errors.New("stop")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err := application.Run(ctx, Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cancellation cause", err)
-	}
-	if gotRule.Interface != "eth0" || gotRule.Source != netip.MustParsePrefix("192.0.2.0/24") || gotRule.Destination != netip.MustParseAddr("192.0.2.10") || gotRule.Port != 55544 {
-		t.Errorf("firewall rule = %+v", gotRule)
-	}
-	minimumTimeout := time.Hour + expirationDrainTimeout
-	maximumTimeout := minimumTimeout + firewallTimeoutSlack
-	if gotRule.Timeout < minimumTimeout || gotRule.Timeout > maximumTimeout {
-		t.Errorf("firewall timeout = %v, want between %v and %v", gotRule.Timeout, minimumTimeout, maximumTimeout)
-	}
-	if lease.closeCalls != 1 {
-		t.Errorf("firewall Close() calls = %d, want 1", lease.closeCalls)
-	}
-}
-
-func TestApplicationFirewallFailureClosesServerBeforeRendering(t *testing.T) {
-	application, fake, _, path := newTestApplication(t)
-	want := errors.New("firewall failed")
-	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
-		return nil, want
-	}
-	rendered := false
-	application.renderQR = func(io.Writer, string) error {
-		rendered = true
-		return nil
-	}
-
-	err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, want) {
-		t.Fatalf("Run() error = %v, want firewall error", err)
-	}
-	if rendered {
-		t.Fatal("QR rendered after firewall configuration failed")
-	}
-	if fake.closeCalls != 1 {
-		t.Errorf("server Close() calls = %d, want 1", fake.closeCalls)
-	}
-}
-
-func TestApplicationReportsFirewallCleanupFailure(t *testing.T) {
-	application, _, _, path := newTestApplication(t)
-	cleanupErr := errors.New("firewall cleanup failed")
-	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
-		return &fakeFirewallLease{closeErr: cleanupErr}, nil
-	}
-
-	cause := errors.New("stop")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err := application.Run(ctx, Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, cause) || !errors.Is(err, cleanupErr) {
-		t.Fatalf("Run() error = %v, want cancellation and cleanup errors", err)
-	}
-}
-
-func TestApplicationRunReportsStartupFailures(t *testing.T) {
-	t.Run("address", func(t *testing.T) {
-		application, _, _, path := newTestApplication(t)
-		want := errors.New("address failed")
-		application.advertiseEndpoint = func() (platformnetwork.Endpoint, error) {
-			return platformnetwork.Endpoint{}, want
-		}
-		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); !errors.Is(err, want) {
-			t.Fatalf("Run() error = %v", err)
-		}
-	})
-	t.Run("listen", func(t *testing.T) {
-		application, fake, _, path := newTestApplication(t)
-		want := errors.New("listen failed")
-		fake.startErr = want
-		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); !errors.Is(err, want) {
-			t.Fatalf("Run() error = %v", err)
-		}
-	})
-	t.Run("invalid listen address", func(t *testing.T) {
-		application, fake, _, path := newTestApplication(t)
-		fake.addr = testAddr("invalid")
-		if err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); err == nil {
-			t.Fatal("Run() error = nil")
-		}
-		if fake.closeCalls != 1 {
-			t.Fatalf("Close() calls = %d, want 1", fake.closeCalls)
-		}
-	})
-}
-
-func TestApplicationRetriesRandomPortWhenCandidateIsInUse(t *testing.T) {
-	application, fake, stderr, path := newTestApplication(t)
-	var firewallPort uint16
-	application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewallLease, error) {
-		firewallPort = rule.Port
-		return &fakeFirewallLease{}, nil
-	}
-	application.selectServerPort = func() (uint16, error) { return 59999, nil }
-	fake.start = func(bindAddr string) (net.Addr, error) {
-		if len(fake.startAddrs) == 1 {
+		addresses = append(addresses, address)
+		if len(addresses) == 1 {
 			return nil, syscall.EADDRINUSE
 		}
-		return testAddr(bindAddr), nil
+		return listener, nil
 	}
+	var rule firewall.Rule
+	a.openFirewall = func(_ context.Context, got firewall.Rule) (firewall.Lease, error) {
+		rule = got
+		return firewallLeaseFunc(func(context.Context) error { return nil }), nil
+	}
+	a.renderQR = func(_ io.Writer, payload string) error {
+		if !strings.HasPrefix(payload, "http://192.0.2.10:50000/s/") {
+			t.Errorf("URL = %q", payload)
+		}
+		return nil
+	}
+	quit := make(chan struct{})
+	close(quit)
+	a.startShutdownListener = func() (<-chan struct{}, func() error, error) { return quit, nil, nil }
+	if err := a.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(addresses, ",") != "192.0.2.10:59999,192.0.2.10:50000" {
+		t.Errorf("listen addresses = %v", addresses)
+	}
+	if rule.Port != 50000 || rule.Interface != "eth0" || rule.Source != netip.MustParsePrefix("192.0.2.0/24") || rule.Destination != netip.MustParseAddr("192.0.2.10") {
+		t.Errorf("firewall rule = %+v", rule)
+	}
+	if rule.Timeout < time.Hour+expirationDrainTimeout || rule.Timeout > time.Hour+expirationDrainTimeout+firewallTimeoutSlack {
+		t.Errorf("firewall timeout = %v", rule.Timeout)
+	}
+}
 
-	cause := errors.New("stop")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err := application.Run(ctx, Request{Paths: []string{path}, Lifetime: time.Hour})
-	if !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cancellation", err)
+func TestListenLANFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		port      uint16
+		listenErr error
+		attempts  int
+	}{
+		{"range low", 49999, nil, 0},
+		{"range high", 60000, nil, 0},
+		{"occupied", 59999, syscall.EADDRINUSE, serverPortAttempts},
+		{"permission", 55544, syscall.EACCES, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := New(Dependencies{Stderr: io.Discard})
+			a.selectServerPort = func() (uint16, error) { return tc.port, nil }
+			addresses := make(map[string]bool)
+			a.listen = func(_, address string) (net.Listener, error) {
+				if addresses[address] {
+					t.Errorf("port retried twice: %s", address)
+				}
+				addresses[address] = true
+				return nil, tc.listenErr
+			}
+			ln, _, err := a.listenLAN(network.Endpoint{Address: netip.MustParseAddr("127.0.0.1")}, 0)
+			if err == nil || ln != nil || len(addresses) != tc.attempts {
+				t.Fatalf("listener=%v error=%v attempts=%d", ln, err, len(addresses))
+			}
+			if tc.listenErr != nil && !errors.Is(err, tc.listenErr) {
+				t.Errorf("error = %v", err)
+			}
+		})
 	}
-	if len(fake.startAddrs) != 2 ||
-		fake.startAddrs[0] != "192.0.2.10:59999" ||
-		fake.startAddrs[1] != "192.0.2.10:50000" {
-		t.Fatalf("Start() addresses = %v", fake.startAddrs)
+}
+
+func TestListenLANBindsSelectedPort(t *testing.T) {
+	a := New(Dependencies{Stderr: io.Discard})
+	listener, port, err := a.listenLAN(network.Endpoint{Address: netip.MustParseAddr("127.0.0.1")}, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(stderr.String(), "http://192.0.2.10:50000/s/") {
-		t.Fatalf("stderr = %q, want selected port", stderr.String())
-	}
-	if firewallPort != 50000 {
-		t.Fatalf("firewall port = %d, want 50000", firewallPort)
+	defer listener.Close()
+	address := listener.Addr().(*net.TCPAddr)
+	if address.Port != int(port) || !address.IP.Equal(net.ParseIP("127.0.0.1")) ||
+		port < minimumServerPort || port >= minimumServerPort+serverPortCount {
+		t.Fatalf("listener address=%v selected port=%d", address, port)
 	}
 }
 
 func TestRandomServerPortIsInConfiguredRange(t *testing.T) {
 	for range 100 {
 		port, err := randomServerPort()
-		if err != nil {
-			t.Fatalf("randomServerPort() error = %v", err)
-		}
-		if port < minimumServerPort || port >= minimumServerPort+serverPortCount {
-			t.Fatalf("randomServerPort() = %d, want %d-%d", port, minimumServerPort, minimumServerPort+serverPortCount-1)
+		if err != nil || port < minimumServerPort || port >= minimumServerPort+serverPortCount {
+			t.Fatalf("port=%d error=%v", port, err)
 		}
 	}
 }
 
-func newTestApplication(t *testing.T) (*Application, *fakeSessionServer, *bytes.Buffer, string) {
+// The injected listener uses an ephemeral loopback port. Production still binds
+// the selected LAN address and port; tests translate only the destination host.
+func newTestApplication(t *testing.T) (*Application, *testListener, *bytes.Buffer, string) {
 	t.Helper()
+	listener := newTestListener(t)
 	path := filepath.Join(t.TempDir(), "shared.txt")
-	if err := os.WriteFile(path, []byte("content"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("content"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	stderr := &bytes.Buffer{}
-	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{Stderr: stderr})
-	configureTestNetworking(application)
-	application.selectServerPort = func() (uint16, error) { return 55544, nil }
-	application.newSendServer = func(*session.Session) sessionServer { return fake }
-	application.renderQR = func(dst io.Writer, payload string) error { _, err := io.WriteString(dst, "QR:"+payload); return err }
-	return application, fake, stderr, path
-}
-
-func configureTestNetworking(application *Application) *fakeFirewallLease {
-	application.advertiseEndpoint = func() (platformnetwork.Endpoint, error) {
-		return platformnetwork.Endpoint{
-			Address:   netip.MustParseAddr("192.0.2.10"),
-			Prefix:    netip.MustParsePrefix("192.0.2.0/24"),
-			Interface: "eth0",
-		}, nil
+	a := New(Dependencies{Stderr: stderr})
+	a.advertiseEndpoint = func() (network.Endpoint, error) {
+		return network.Endpoint{Address: netip.MustParseAddr("192.0.2.10"), Prefix: netip.MustParsePrefix("192.0.2.0/24"), Interface: "eth0"}, nil
 	}
-	lease := &fakeFirewallLease{}
-	application.openFirewall = func(context.Context, firewall.Rule) (firewallLease, error) {
-		return lease, nil
+	a.selectServerPort = func() (uint16, error) { return 55544, nil }
+	a.listen = func(string, string) (net.Listener, error) { return listener, nil }
+	a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) {
+		return firewallLeaseFunc(func(context.Context) error { return nil }), nil
 	}
-	return lease
-}
-
-type fakeFirewallLease struct {
-	closeCalls int
-	closeErr   error
-}
-
-func (l *fakeFirewallLease) Close(context.Context) error {
-	l.closeCalls++
-	return l.closeErr
-}
-
-func TestApplicationRunReceiveMode(t *testing.T) {
-	stderr := &bytes.Buffer{}
-	stdout := &bytes.Buffer{}
-	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{Stdout: stdout, Stderr: stderr})
-	configureTestNetworking(application)
-
-	receiveDir := filepath.Join(t.TempDir(), "received")
-	var openedDir string
-	store := receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
-		return receive.Result{}, nil
+	a.renderQR = func(io.Writer, string) error { return nil }
+	var file *share.File
+	a.openPaths = func(paths []string) (*share.Collection, *share.Directory, error) {
+		files, directory, err := share.OpenPaths(paths)
+		if files != nil {
+			file = files.Resources()[0].File()
+		}
+		return files, directory, err
+	}
+	t.Cleanup(func() {
+		if file != nil {
+			assertFileClosed(t, file)
+		}
 	})
-	application.openReceiveStore = func(dir string) (receiveStore, error) {
-		openedDir = dir
-		return store, nil
-	}
-	serverReceivedStore := false
-	application.newReceiveServer = func(_ *session.Session, got receiveStore, submitter textSubmitter) sessionServer {
-		serverReceivedStore = got != nil
-		text, err := share.NewText([]byte("received text"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := submitter.Submit(context.Background(), text); err != nil {
-			t.Fatalf("Submit() error = %v", err)
-		}
-		return fake
-	}
-	var qrPayload string
-	application.renderQR = func(_ io.Writer, payload string) error {
-		qrPayload = payload
-		return nil
-	}
-
-	cause := errors.New("stop receive test")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err := application.Run(ctx, Request{
-		Operation:  OperationReceive,
-		ReceiveDir: receiveDir,
-		Lifetime:   time.Hour,
-	})
-	if !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cancellation cause", err)
-	}
-	if openedDir != receiveDir {
-		t.Errorf("opened receive directory = %q, want %q", openedDir, receiveDir)
-	}
-	if !serverReceivedStore {
-		t.Fatal("receive server did not receive opened store")
-	}
-	if got := stdout.String(); got != "received text" {
-		t.Errorf("stdout = %q, want received text", got)
-	}
-	if qrPayload == "" || !strings.HasPrefix(qrPayload, "http://192.0.2.10:55544/s/") {
-		t.Errorf("QR payload = %q", qrPayload)
-	}
-	if got := stderr.String(); !strings.Contains(got, "Receiving into "+receiveDir) {
-		t.Errorf("stderr = %q", got)
-	}
-	if fake.closeCalls != 1 {
-		t.Errorf("Close() calls = %d, want 1", fake.closeCalls)
-	}
+	return a, listener, stderr, path
 }
 
-func TestApplicationInteractiveShutdownDrainsReceivedText(t *testing.T) {
-	shutdownRequested := make(chan struct{})
-	close(shutdownRequested)
-	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{
-		Stderr: io.Discard,
-		StartShutdownListener: func() (<-chan struct{}, error) {
-			return shutdownRequested, nil
-		},
-	})
-	configureTestNetworking(application)
-	application.openReceiveStore = func(string) (receiveStore, error) {
-		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
-			return receive.Result{}, nil
-		}), nil
-	}
-
-	sinkStarted := make(chan struct{})
-	releaseSink := make(chan struct{})
-	var received string
-	application.newClipboardSink = func(string) (receive.TextSink, error) {
-		return textSinkFunc(func(_ context.Context, text share.Text) error {
-			close(sinkStarted)
-			<-releaseSink
-			received = text.String()
-			return nil
-		}), nil
-	}
-	submitDone := make(chan error, 1)
-	application.newReceiveServer = func(_ *session.Session, _ receiveStore, submitter textSubmitter) sessionServer {
-		text, err := share.NewText([]byte("drained text"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		go func() {
-			submitDone <- submitter.Submit(context.Background(), text)
-		}()
-		<-sinkStarted
-		return fake
-	}
-	application.renderQR = func(io.Writer, string) error { return nil }
-
-	runDone := make(chan error, 1)
-	go func() {
-		runDone <- application.Run(context.Background(), Request{
-			Operation:  OperationReceive,
-			ReceiveDir: "/receive",
-			Clipboard:  "xclip",
-			Lifetime:   time.Hour,
-		})
-	}()
-
-	select {
-	case err := <-runDone:
-		t.Fatalf("Run() returned before text drain: %v", err)
-	case <-time.After(20 * time.Millisecond):
-	}
-	close(releaseSink)
-	if err := <-submitDone; err != nil {
-		t.Fatalf("Submit() error = %v", err)
-	}
-	if err := <-runDone; err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if received != "drained text" {
-		t.Fatalf("received text = %q, want drained text", received)
-	}
-	if fake.shutdownCalls != 1 || fake.closeCalls != 0 {
-		t.Fatalf("shutdown=%d close=%d, want shutdown=1 close=0", fake.shutdownCalls, fake.closeCalls)
-	}
+type testListener struct {
+	net.Listener
+	closed    chan struct{}
+	once      sync.Once
+	acceptErr error
+	closeErr  error
+	onClose   func()
 }
 
-func TestApplicationRunReceiveModeUsesClipboardSink(t *testing.T) {
-	var clipboard bytes.Buffer
-	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
-	configureTestNetworking(application)
-	application.openReceiveStore = func(string) (receiveStore, error) {
-		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
-			return receive.Result{}, nil
-		}), nil
-	}
-	var selectedBackend string
-	application.newClipboardSink = func(backend string) (receive.TextSink, error) {
-		selectedBackend = backend
-		return receive.NewWriterTextSink(&clipboard), nil
-	}
-	application.newReceiveServer = func(_ *session.Session, _ receiveStore, submitter textSubmitter) sessionServer {
-		text, err := share.NewText([]byte("clipboard value"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := submitter.Submit(context.Background(), text); err != nil {
-			t.Fatal(err)
-		}
-		return fake
-	}
-	application.renderQR = func(io.Writer, string) error { return nil }
-
-	cause := errors.New("stop clipboard test")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err := application.Run(ctx, Request{
-		Operation:  OperationReceive,
-		ReceiveDir: "/receive",
-		Clipboard:  "xclip",
-		Lifetime:   time.Hour,
-	})
-	if !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cancellation cause", err)
-	}
-	if selectedBackend != "xclip" {
-		t.Errorf("selected backend = %q, want xclip", selectedBackend)
-	}
-	if got := clipboard.String(); got != "clipboard value" {
-		t.Errorf("clipboard sink = %q, want clipboard value", got)
-	}
-}
-
-func TestApplicationAutoClipboardMissingFallsBackToStdout(t *testing.T) {
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{Stdout: &stdout, Stderr: &stderr})
-	configureTestNetworking(application)
-	application.openReceiveStore = func(string) (receiveStore, error) {
-		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
-			return receive.Result{}, nil
-		}), nil
-	}
-	application.newClipboardSink = func(backend string) (receive.TextSink, error) {
-		if backend != "auto" {
-			t.Fatalf("clipboard backend = %q, want auto", backend)
-		}
-		return nil, clipboard.ErrBackendNotFound
-	}
-	application.newReceiveServer = func(_ *session.Session, _ receiveStore, submitter textSubmitter) sessionServer {
-		text, err := share.NewText([]byte("fallback value"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := submitter.Submit(context.Background(), text); err != nil {
-			t.Fatal(err)
-		}
-		return fake
-	}
-	application.renderQR = func(io.Writer, string) error { return nil }
-
-	cause := errors.New("stop auto clipboard test")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err := application.Run(ctx, Request{
-		Operation:  OperationReceive,
-		ReceiveDir: "/receive",
-		Clipboard:  "auto",
-		Lifetime:   time.Hour,
-	})
-	if !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cancellation cause", err)
-	}
-	if got := stdout.String(); got != "fallback value" {
-		t.Errorf("stdout = %q, want fallback value", got)
-	}
-	if got := stderr.String(); !strings.Contains(got, "Clipboard backend not found") {
-		t.Errorf("stderr = %q, want missing-backend notice", got)
-	}
-}
-
-func TestApplicationClipboardConfigurationFailurePreventsServerStart(t *testing.T) {
-	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
-	application.openReceiveStore = func(string) (receiveStore, error) {
-		return receiveStoreFunc(func(context.Context, string, io.Reader) (receive.Result, error) {
-			return receive.Result{}, nil
-		}), nil
-	}
-	want := errors.New("backend not found")
-	application.newClipboardSink = func(string) (receive.TextSink, error) {
-		return nil, want
-	}
-	serverCreated := false
-	application.newReceiveServer = func(*session.Session, receiveStore, textSubmitter) sessionServer {
-		serverCreated = true
-		return nil
-	}
-
-	err := application.Run(context.Background(), Request{
-		Operation:  OperationReceive,
-		ReceiveDir: "/receive",
-		Clipboard:  "wl-copy",
-		Lifetime:   time.Hour,
-	})
-	if !errors.Is(err, want) {
-		t.Fatalf("Run() error = %v, want backend error", err)
-	}
-	if serverCreated {
-		t.Fatal("receive server was created after clipboard configuration failure")
-	}
-}
-
-func TestApplicationUnsupportedClipboardBackendIsInvalidRequest(t *testing.T) {
-	application := New(Dependencies{Stdout: io.Discard, Stderr: io.Discard})
-	storeOpened := false
-	application.openReceiveStore = func(string) (receiveStore, error) {
-		storeOpened = true
-		return nil, errors.New("unexpected receive store open")
-	}
-
-	err := application.Run(context.Background(), Request{
-		Operation:  OperationReceive,
-		ReceiveDir: "/receive",
-		Clipboard:  "unsupported",
-		Lifetime:   time.Hour,
-	})
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("Run() error = %v, want ErrInvalidRequest", err)
-	}
-	if storeOpened {
-		t.Fatal("receive store was opened for an unsupported clipboard backend")
-	}
-}
-
-func TestApplicationRunTextSendMode(t *testing.T) {
-	stderr := &bytes.Buffer{}
-	fake := &fakeSessionServer{done: make(chan error, 1), addr: testAddr("192.0.2.10:55544")}
-	application := New(Dependencies{Stderr: stderr})
-	configureTestNetworking(application)
-
-	text, err := share.NewText([]byte("hello"))
+func newTestListener(t *testing.T) *testListener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var serverText string
-	application.newTextServer = func(sess *session.Session) sessionServer {
-		got, ok := sess.Text()
-		if ok {
-			serverText = got.String()
+	t.Cleanup(func() { ln.Close() })
+	return &testListener{Listener: ln, closed: make(chan struct{})}
+}
+
+func (l *testListener) Accept() (net.Conn, error) {
+	if l.acceptErr != nil {
+		return nil, l.acceptErr
+	}
+	return l.Listener.Accept()
+}
+
+func (l *testListener) Close() error {
+	err := l.Listener.Close()
+	l.once.Do(func() {
+		if l.onClose != nil {
+			l.onClose()
 		}
-		return fake
-	}
-	var qrPayload string
-	application.renderQR = func(_ io.Writer, payload string) error {
-		qrPayload = payload
-		return nil
-	}
-
-	cause := errors.New("stop text test")
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(cause)
-	err = application.Run(ctx, Request{
-		Operation: OperationSendText,
-		Text:      text,
-		Lifetime:  time.Hour,
+		close(l.closed)
 	})
-	if !errors.Is(err, cause) {
-		t.Fatalf("Run() error = %v, want cancellation cause", err)
-	}
-	if serverText != "hello" {
-		t.Errorf("server text = %q, want hello", serverText)
-	}
-	if qrPayload == "" || !strings.HasPrefix(qrPayload, "http://192.0.2.10:55544/s/") {
-		t.Errorf("QR payload = %q", qrPayload)
-	}
-	if got := stderr.String(); !strings.Contains(got, "Sharing text") {
-		t.Errorf("stderr = %q", got)
-	}
-	if fake.closeCalls != 1 {
-		t.Errorf("Close() calls = %d, want 1", fake.closeCalls)
-	}
+	return errors.Join(err, l.closeErr)
 }
 
-func TestApplicationReceiveStoreFailurePreventsServerStart(t *testing.T) {
-	application := New(Dependencies{Stderr: io.Discard})
-	want := errors.New("store failed")
-	application.openReceiveStore = func(string) (receiveStore, error) {
-		return nil, want
-	}
-	serverCreated := false
-	application.newReceiveServer = func(*session.Session, receiveStore, textSubmitter) sessionServer {
-		serverCreated = true
-		return nil
-	}
+type firewallLeaseFunc func(context.Context) error
 
-	err := application.Run(context.Background(), Request{
-		Operation:  OperationReceive,
-		ReceiveDir: "/receive",
-		Lifetime:   time.Hour,
-	})
-	if !errors.Is(err, want) {
-		t.Fatalf("Run() error = %v, want store error", err)
-	}
-	if serverCreated {
-		t.Fatal("receive server was created after store failure")
-	}
-}
+func (f firewallLeaseFunc) Close(ctx context.Context) error { return f(ctx) }
 
-type receiveStoreFunc func(context.Context, string, io.Reader) (receive.Result, error)
+type writerFunc func([]byte) (int, error)
 
-func (function receiveStoreFunc) Save(ctx context.Context, name string, source io.Reader) (receive.Result, error) {
-	return function(ctx, name, source)
-}
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 type textSinkFunc func(context.Context, share.Text) error
 
-func (function textSinkFunc) WriteText(ctx context.Context, text share.Text) error {
-	return function(ctx, text)
-}
+func (f textSinkFunc) WriteText(ctx context.Context, text share.Text) error { return f(ctx, text) }
 
-type testAddr string
-
-func (a testAddr) Network() string { return "tcp" }
-func (a testAddr) String() string  { return string(a) }
-
-type fakeSessionServer struct {
-	fakeShutdownServer
-	done       chan error
-	addr       net.Addr
-	startErr   error
-	start      func(string) (net.Addr, error)
-	startAddrs []string
-}
-
-func (s *fakeSessionServer) Start(bindAddr string) (net.Addr, error) {
-	s.startAddrs = append(s.startAddrs, bindAddr)
-	if s.start != nil {
-		return s.start(bindAddr)
+func localURL(t *testing.T, listener net.Listener, payload string) string {
+	t.Helper()
+	u, err := url.Parse(payload)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return s.addr, s.startErr
-}
-
-func (s *fakeSessionServer) Done() <-chan error { return s.done }
-
-func TestShutdownExpiredServer(t *testing.T) {
-	t.Run("graceful drain", func(t *testing.T) {
-		server := &fakeShutdownServer{}
-
-		if err := shutdownExpiredServer(server, time.Second); err != nil {
-			t.Fatalf("shutdownExpiredServer() error = %v", err)
-		}
-		if server.closeCalls != 0 {
-			t.Fatalf("Close() calls = %d, want 0", server.closeCalls)
-		}
-	})
-
-	t.Run("drain timeout forces close and remains successful", func(t *testing.T) {
-		server := &fakeShutdownServer{
-			shutdown: func(ctx context.Context) error {
-				<-ctx.Done()
-				return ctx.Err()
-			},
-		}
-
-		if err := shutdownExpiredServer(server, 0); err != nil {
-			t.Fatalf("shutdownExpiredServer() error = %v", err)
-		}
-		if server.closeCalls != 1 {
-			t.Fatalf("Close() calls = %d, want 1", server.closeCalls)
-		}
-	})
-
-	t.Run("force close failure is reported", func(t *testing.T) {
-		closeErr := errors.New("close failed")
-		server := &fakeShutdownServer{
-			shutdown: func(ctx context.Context) error {
-				<-ctx.Done()
-				return ctx.Err()
-			},
-			closeErr: closeErr,
-		}
-
-		err := shutdownExpiredServer(server, 0)
-		if !errors.Is(err, closeErr) {
-			t.Fatalf("shutdownExpiredServer() error = %v, want close error", err)
-		}
-		if server.closeCalls != 1 {
-			t.Fatalf("Close() calls = %d, want 1", server.closeCalls)
-		}
-	})
-
-	t.Run("shutdown failure is reported after close", func(t *testing.T) {
-		shutdownErr := errors.New("shutdown failed")
-		server := &fakeShutdownServer{
-			shutdown: func(context.Context) error {
-				return shutdownErr
-			},
-		}
-
-		err := shutdownExpiredServer(server, time.Second)
-		if !errors.Is(err, shutdownErr) {
-			t.Fatalf("shutdownExpiredServer() error = %v, want shutdown error", err)
-		}
-		if server.closeCalls != 1 {
-			t.Fatalf("Close() calls = %d, want 1", server.closeCalls)
-		}
-	})
-}
-
-type fakeShutdownServer struct {
-	shutdown      func(context.Context) error
-	closeErr      error
-	closeCalls    int
-	shutdownCalls int
-}
-
-func (s *fakeShutdownServer) Shutdown(ctx context.Context) error {
-	s.shutdownCalls++
-	if s.shutdown == nil {
-		return nil
-	}
-	return s.shutdown(ctx)
-}
-
-func (s *fakeShutdownServer) Close() error {
-	s.closeCalls++
-	return s.closeErr
+	u.Host = listener.Addr().String()
+	return u.String()
 }
 
 func TestApplicationRequestedPort(t *testing.T) {
 	for _, startErr := range []error{nil, syscall.EADDRINUSE, syscall.EACCES} {
 		t.Run(fmt.Sprint(startErr), func(t *testing.T) {
-			application, fake, stderr, path := newTestApplication(t)
+			application, listener, stderr, path := newTestApplication(t)
 			application.selectServerPort = func() (uint16, error) {
 				t.Fatal("random selection called for explicit port")
 				return 0, nil
 			}
-			fake.start = func(addr string) (net.Addr, error) { return testAddr(addr), startErr }
+			var addresses []string
+			application.listen = func(_, addr string) (net.Listener, error) {
+				addresses = append(addresses, addr)
+				if startErr != nil {
+					return nil, startErr
+				}
+				return listener, nil
+			}
 			var firewallPort uint16
-			lease := &fakeFirewallLease{}
-			application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewallLease, error) {
+			closeCalls := 0
+			lease := firewallLeaseFunc(func(context.Context) error {
+				closeCalls++
+				return nil
+			})
+			application.openFirewall = func(_ context.Context, rule firewall.Rule) (firewall.Lease, error) {
 				firewallPort = rule.Port
 				return lease, nil
 			}
-			err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Millisecond, Port: 8080})
-			if len(fake.startAddrs) != 1 || fake.startAddrs[0] != "192.0.2.10:8080" {
-				t.Fatalf("Start addresses = %v", fake.startAddrs)
+			quit := make(chan struct{})
+			close(quit)
+			application.startShutdownListener = func() (<-chan struct{}, func() error, error) { return quit, nil, nil }
+			err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour, Port: 8080})
+			if len(addresses) != 1 || addresses[0] != "192.0.2.10:8080" {
+				t.Fatalf("Start addresses = %v", addresses)
 			}
 			if startErr != nil {
 				if !errors.Is(err, startErr) || !strings.Contains(err.Error(), "8080") || firewallPort != 0 || stderr.Len() != 0 {
@@ -899,8 +671,8 @@ func TestApplicationRequestedPort(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || firewallPort != 8080 || lease.closeCalls != 1 || !strings.Contains(stderr.String(), "http://192.0.2.10:8080/s/") {
-				t.Fatalf("error=%v firewall port=%d cleanup=%d stderr=%q", err, firewallPort, lease.closeCalls, stderr)
+			if err != nil || firewallPort != 8080 || closeCalls != 1 || !strings.Contains(stderr.String(), "http://192.0.2.10:8080/s/") {
+				t.Fatalf("error=%v firewall port=%d cleanup=%d stderr=%q", err, firewallPort, closeCalls, stderr)
 			}
 		})
 	}

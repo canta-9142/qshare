@@ -53,48 +53,83 @@ func runHelper(args []string, stdin io.Reader, stdout io.Writer) error {
 		return err
 	}
 
-	runner := execRunner{}
-	var lease Lease
-	switch request.backend {
-	case nixOSNFTablesBackend:
-		lease, err = openNixOSNFTables(context.Background(), runner, request)
-	case nixOSIPTablesBackend:
-		lease, err = openNixOSIPTables(context.Background(), runner, request)
-	default:
-		err = fmt.Errorf("unsupported firewall helper backend %q", request.backend)
-	}
-	if err != nil {
-		return err
-	}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	return runHelperSession(request, stdin, stdout, execRunner{}, signals)
+}
 
-	if _, err := fmt.Fprintf(stdout, "READY %s\n", request.leaseID); err != nil {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), helperCleanupTimeout)
-		defer cancel()
-		return errors.Join(err, lease.Close(cleanupCtx))
-	}
-
-	// The parent keeps stdin open for the lifetime of the session. EOF also
-	// covers abrupt parent termination, so the privileged helper can clean up.
+// runHelperSession monitors shutdown before invoking any firewall command.
+func runHelperSession(request helperRequest, stdin io.Reader, stdout io.Writer, runner commandRunner, signals <-chan os.Signal) (runErr error) {
+	deadlineCtx, cancelDeadline := context.WithDeadline(context.Background(), request.expires)
+	defer cancelDeadline()
+	ctx, cancel := context.WithCancel(deadlineCtx)
+	defer cancel()
 	inputClosed := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(io.Discard, stdin)
 		close(inputClosed)
 	}()
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
-	timer := time.NewTimer(time.Until(request.expires))
-	defer timer.Stop()
+	go func() {
+		select {
+		case <-inputClosed:
+			cancel()
+		case <-signals:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
-	select {
-	case <-inputClosed:
-	case <-signals:
-	case <-timer.C:
+	var lease Lease
+	var err error
+	switch request.backend {
+	case nixOSNFTablesBackend:
+		lease, err = openNixOSNFTables(ctx, runner, request)
+	case nixOSIPTablesBackend:
+		lease, err = openNixOSIPTables(ctx, runner, request)
+	default:
+		err = fmt.Errorf("unsupported firewall helper backend %q", request.backend)
+	}
+	if err != nil {
+		if onlyHelperCancellation(err, ctx.Err()) {
+			return nil
+		}
+		return err
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), helperCleanupTimeout)
+		defer cancel()
+		runErr = errors.Join(runErr, lease.Close(cleanupCtx))
+	}()
+	if ctx.Err() != nil {
+		return nil
 	}
 
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), helperCleanupTimeout)
-	defer cancel()
-	return lease.Close(cleanupCtx)
+	if _, err := fmt.Fprintf(stdout, "READY %s\n", request.leaseID); err != nil {
+		return err
+	}
+
+	<-ctx.Done()
+	return nil
+}
+
+func onlyHelperCancellation(err, cancellation error) bool {
+	if err == nil || cancellation == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		for _, child := range children {
+			if !onlyHelperCancellation(child, cancellation) {
+				return false
+			}
+		}
+		return len(children) > 0
+	}
+	if wrapped := errors.Unwrap(err); wrapped != nil {
+		return onlyHelperCancellation(wrapped, cancellation)
+	}
+	return err == cancellation
 }
 
 // parseHelperRequest converts untrusted helper arguments into a validated request.

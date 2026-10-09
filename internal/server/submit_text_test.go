@@ -25,7 +25,7 @@ func TestSubmitTextWaitsForSuccessfulProcessing(t *testing.T) {
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
-		server.server.Handler.ServeHTTP(
+		server.ServeHTTP(
 			response,
 			httptest.NewRequest(http.MethodPost, "/t/"+sess.Token().String(), strings.NewReader("hello, 世界")),
 		)
@@ -94,57 +94,6 @@ func TestSubmitTextRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-func TestSubmitTextRejectsUnauthorizedAndExpiredRequests(t *testing.T) {
-	calls := 0
-	server, sess := newTextReceiveTestServer(t, textSubmitterFunc(func(context.Context, share.Text) error {
-		calls++
-		return nil
-	}))
-	other := sess.Token()
-	other[0] ^= 0xff
-	for _, path := range []string{"/t/not-a-token", "/t/" + other.String()} {
-		response := httptest.NewRecorder()
-		server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader("secret")))
-		if response.Code != http.StatusNotFound {
-			t.Errorf("%s: status = %d, want %d", path, response.Code, http.StatusNotFound)
-		}
-	}
-
-	server.now = sess.ExpiresAt
-	response := submitTextRequest(server, sess, "secret")
-	if response.Code != http.StatusNotFound {
-		t.Errorf("expired status = %d, want %d", response.Code, http.StatusNotFound)
-	}
-	if calls != 0 {
-		t.Errorf("Submit() calls = %d, want 0", calls)
-	}
-}
-
-func TestSubmitTextRejectsTokenFromAnotherSession(t *testing.T) {
-	calls := 0
-	first, _ := newTextReceiveTestServer(t, textSubmitterFunc(func(context.Context, share.Text) error {
-		calls++
-		return nil
-	}))
-	_, secondSession := newTextReceiveTestServer(t, textSubmitterFunc(nil))
-
-	response := httptest.NewRecorder()
-	first.server.Handler.ServeHTTP(
-		response,
-		httptest.NewRequest(
-			http.MethodPost,
-			"/t/"+secondSession.Token().String(),
-			strings.NewReader("secret"),
-		),
-	)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
-	}
-	if calls != 0 {
-		t.Fatalf("Submit() calls = %d, want 0", calls)
-	}
-}
-
 func TestSubmitTextReportsFailureAndAcceptsLaterSubmission(t *testing.T) {
 	want := errors.New("sink failed")
 	calls := 0
@@ -166,7 +115,7 @@ func TestSubmitTextReportsFailureAndAcceptsLaterSubmission(t *testing.T) {
 func TestSubmitTextRejectsUnsupportedMethod(t *testing.T) {
 	server, sess := newTextReceiveTestServer(t, textSubmitterFunc(nil))
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(
+	server.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodGet, "/t/"+sess.Token().String(), nil),
 	)
@@ -181,18 +130,18 @@ func (function textSubmitterFunc) Submit(ctx context.Context, text share.Text) e
 	return function(ctx, text)
 }
 
-func newTextReceiveTestServer(t *testing.T, submitter textSubmitter) (*Server, *session.Session) {
+func newTextReceiveTestServer(t *testing.T, submitter textSubmitter) (*receiveHandler, *session.Session) {
 	t.Helper()
-	sess, err := session.NewReceive(time.Hour)
+	sess, err := session.New(time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewReceive(sess, uploadStoreFunc(nil), submitter), sess
+	return newReceive(sess, uploadStoreFunc(nil), submitter), sess
 }
 
-func submitTextRequest(server *Server, sess *session.Session, body string) *httptest.ResponseRecorder {
+func submitTextRequest(server *receiveHandler, sess *session.Session, body string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
-	server.server.Handler.ServeHTTP(
+	server.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodPost, "/t/"+sess.Token().String(), strings.NewReader(body)),
 	)

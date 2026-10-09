@@ -20,34 +20,51 @@ func (b *fakeBackend) tryOpen(context.Context, Rule) (Lease, bool, error) {
 	return b.lease, b.handled, b.err
 }
 
-func TestManagerFallsBackToNextBackend(t *testing.T) {
+func TestOpenBackendsFallsBackToNextBackend(t *testing.T) {
 	first := &fakeBackend{}
 	want := noopLease{}
 	second := &fakeBackend{lease: want, handled: true}
 	third := &fakeBackend{lease: noopLease{}, handled: true}
 
-	got, err := (&manager{backends: []backend{first, second, third}}).open(context.Background(), testRule())
+	got, err := openBackends(context.Background(), testRule(), []backend{first, second, third})
 	if err != nil {
-		t.Fatalf("open() error = %v", err)
+		t.Fatalf("openBackends() error = %v", err)
 	}
 	if got != want {
-		t.Fatalf("open() lease = %#v, want %#v", got, want)
+		t.Fatalf("openBackends() lease = %#v, want %#v", got, want)
 	}
 	if first.calls != 1 || second.calls != 1 || third.calls != 0 {
 		t.Fatalf("backend calls = %d, %d, %d; want 1, 1, 0", first.calls, second.calls, third.calls)
 	}
 }
 
-func TestManagerStopsAfterBackendFailure(t *testing.T) {
+func TestOpenBackendsStopsAfterBackendFailure(t *testing.T) {
 	want := errors.New("backend failed")
 	first := &fakeBackend{handled: true, err: want}
 	second := &fakeBackend{handled: true, lease: noopLease{}}
 
-	_, err := (&manager{backends: []backend{first, second}}).open(context.Background(), testRule())
+	_, err := openBackends(context.Background(), testRule(), []backend{first, second})
 	if !errors.Is(err, want) {
-		t.Fatalf("open() error = %v, want %v", err, want)
+		t.Fatalf("openBackends() error = %v, want %v", err, want)
 	}
 	if second.calls != 0 {
 		t.Fatalf("second backend calls = %d, want 0", second.calls)
+	}
+}
+
+func TestOpenBackendsReturnsNoopWhenNoBackendHandlesRule(t *testing.T) {
+	first, second := &fakeBackend{}, &fakeBackend{}
+	lease, err := openBackends(context.Background(), testRule(), []backend{first, second})
+	if err != nil {
+		t.Fatalf("openBackends() error = %v", err)
+	}
+	if _, ok := lease.(noopLease); !ok {
+		t.Fatalf("openBackends() lease = %T, want noopLease", lease)
+	}
+	if err := lease.Close(context.Background()); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if first.calls != 1 || second.calls != 1 {
+		t.Fatalf("backend calls = %d, %d; want 1, 1", first.calls, second.calls)
 	}
 }

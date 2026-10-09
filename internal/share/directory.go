@@ -30,7 +30,6 @@ type Node struct {
 	kind     NodeKind
 	size     int64
 	modTime  time.Time
-	rel      []string
 	identity os.FileInfo
 	children []*Node
 	parent   *Node
@@ -57,6 +56,10 @@ func OpenDirectory(path string) (*Directory, error) {
 }
 
 func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory, resultErr error) {
+	// Preserve intermediate components while removing trailing separators.
+	if trimmed := strings.TrimRight(path, string(filepath.Separator)); trimmed != "" {
+		path = trimmed
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("lstat shared directory: %w", err)
@@ -98,9 +101,13 @@ func openDirectory(path string, makeID func() (ResourceID, error)) (_ *Directory
 }
 
 func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *int, makeID func() (ResourceID, error)) error {
-	items, err := dir.ReadDir(-1)
-	if err != nil {
-		return fmt.Errorf("read directory %q: %w", strings.Join(parent.rel, string(filepath.Separator)), err)
+	remaining := MaxDirectoryEntries - *entries
+	items, err := dir.ReadDir(remaining + 1)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("read directory %q: %w", dir.Name(), err)
+	}
+	if len(items) > remaining {
+		return fmt.Errorf("directory contains too many entries: maximum is %d", MaxDirectoryEntries)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name() < items[j].Name() })
 	for _, item := range items {
@@ -129,7 +136,7 @@ func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *
 			child.Close()
 			return err
 		}
-		node := &Node{id: id, name: name, rel: append(append([]string(nil), parent.rel...), name), identity: info, size: info.Size(), modTime: info.ModTime(), parent: parent}
+		node := &Node{id: id, name: name, identity: info, size: info.Size(), modTime: info.ModTime(), parent: parent, pinned: child}
 		if info.Mode().IsRegular() {
 			node.kind = NodeFile
 			*files++
@@ -137,17 +144,17 @@ func (d *Directory) walk(dir *os.File, parent *Node, depth int, files, entries *
 				child.Close()
 				return fmt.Errorf("directory contains too many regular files: maximum is %d", MaxDirectoryFiles)
 			}
-			node.pinned = child
 		} else {
 			node.kind = NodeDirectory
-			err = d.walk(child, node, childDepth, files, entries, makeID)
-			closeErr := child.Close()
-			if err != nil || closeErr != nil {
-				return errors.Join(err, closeErr)
-			}
 		}
 		parent.children = append(parent.children, node)
+		// Register before descending so startup failures close this handle too.
 		d.byID[id] = node
+		if node.kind == NodeDirectory {
+			if err := d.walk(child, node, childDepth, files, entries, makeID); err != nil {
+				return err
+			}
+		}
 	}
 	sort.SliceStable(parent.children, func(i, j int) bool {
 		if parent.children[i].kind != parent.children[j].kind {
@@ -172,90 +179,57 @@ func (d *Directory) uniqueID(makeID func() (ResourceID, error)) (ResourceID, err
 func (d *Directory) Root() *Node                        { return d.node }
 func (d *Directory) Lookup(id ResourceID) (*Node, bool) { n, ok := d.byID[id]; return n, ok }
 
-func (d *Directory) OpenFile(node *Node) (*DirectoryFile, error) {
+func (d *Directory) OpenFile(node *Node) (*File, error) {
 	if node == nil || node.kind != NodeFile || d.byID[node.id] != node {
 		return nil, errors.New("node is not an authorized file")
 	}
-	file, err := d.openAuthorizedRoot()
+	file, info, err := d.openAuthorizedNode(node)
 	if err != nil {
 		return nil, err
 	}
-	for i, part := range node.rel {
-		next, openErr := reopenDirectoryEntryNoFollow(file, part, i < len(node.rel)-1)
-		file.Close()
-		if openErr != nil {
-			return nil, fmt.Errorf("reopen authorized file: %w", openErr)
-		}
-		file = next
-	}
-	info, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, fmt.Errorf("verify authorized file: %w", err)
-	}
-	if !info.Mode().IsRegular() || !os.SameFile(info, node.identity) {
-		file.Close()
-		return nil, errors.New("authorized file was replaced")
-	}
-	return &DirectoryFile{file: file, name: node.name, size: info.Size(), modTime: info.ModTime()}, nil
+	return &File{file: file, name: node.name, size: info.Size(), modTime: info.ModTime()}, nil
 }
 
 func (d *Directory) VerifyDirectory(node *Node) error {
 	if node == nil || node.kind != NodeDirectory || d.byID[node.id] != node {
 		return errors.New("node is not an authorized directory")
 	}
-	file, err := d.openAuthorizedRoot()
+	file, _, err := d.openAuthorizedNode(node)
 	if err != nil {
 		return err
 	}
-	for _, part := range node.rel {
-		next, openErr := reopenDirectoryEntryNoFollow(file, part, true)
-		file.Close()
+	return file.Close()
+}
+
+// Reopen descendants only through handles to their verified authorized parents.
+func (d *Directory) openAuthorizedNode(node *Node) (*os.File, os.FileInfo, error) {
+	var file *os.File
+	var err error
+	if node == d.node {
+		file, err = openDirectoryNoFollow(d.rootPath)
+	} else {
+		parent, _, openErr := d.openAuthorizedNode(node.parent)
 		if openErr != nil {
-			return fmt.Errorf("reopen authorized directory: %w", openErr)
+			return nil, nil, openErr
 		}
-		file = next
+		file, err = reopenDirectoryEntryNoFollow(parent, node.name, node.kind == NodeDirectory)
+		parent.Close()
 	}
-	defer file.Close()
-	info, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("verify authorized directory: %w", err)
-	}
-	if !info.IsDir() || !os.SameFile(info, node.identity) {
-		return errors.New("authorized directory was replaced")
-	}
-	return nil
-}
-
-func (d *Directory) openAuthorizedRoot() (*os.File, error) {
-	file, err := openDirectoryNoFollow(d.rootPath)
-	if err != nil {
-		return nil, fmt.Errorf("reopen shared root: %w", err)
+		return nil, nil, fmt.Errorf("reopen authorized node: %w", err)
 	}
 	info, err := file.Stat()
 	if err != nil {
 		file.Close()
-		return nil, fmt.Errorf("verify shared root: %w", err)
+		return nil, nil, fmt.Errorf("verify authorized node: %w", err)
 	}
-	if !os.SameFile(info, d.node.identity) {
+	if info.Mode().Type() != node.identity.Mode().Type() || !os.SameFile(info, node.identity) {
 		file.Close()
-		return nil, errors.New("shared root was replaced")
+		return nil, nil, errors.New("authorized node was replaced")
 	}
-	return file, nil
+	return file, info, nil
 }
 
-type DirectoryFile struct {
-	file    *os.File
-	name    string
-	size    int64
-	modTime time.Time
-}
-
-func (f *DirectoryFile) Name() string          { return f.name }
-func (f *DirectoryFile) Size() int64           { return f.size }
-func (f *DirectoryFile) ModTime() time.Time    { return f.modTime }
-func (f *DirectoryFile) Reader() io.ReadSeeker { return io.NewSectionReader(f.file, 0, f.size) }
-func (f *DirectoryFile) Close() error          { return f.file.Close() }
 func (d *Directory) Close() error {
 	if d == nil || d.root == nil {
 		return nil

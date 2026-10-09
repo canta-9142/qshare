@@ -1,17 +1,10 @@
 package server
 
 import (
-	"embed"
-	"html/template"
 	"net/http"
 
 	"github.com/canta-9142/qshare/internal/share"
 )
-
-//go:embed web/common.html web/directory.html
-var directoryWebFiles embed.FS
-
-var directoryTemplate = template.Must(template.ParseFS(directoryWebFiles, "web/common.html", "web/directory.html"))
 
 type directoryPageData struct {
 	Name        string
@@ -29,31 +22,25 @@ type directoryLinkData struct {
 }
 type directoryFileData struct{ Name, Size, URL string }
 
-func (s *Server) directoryRoot(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil || !s.session.Authorize(token, s.now()) || s.session.Directory() == nil {
-		http.NotFound(w, r)
-		return
-	}
-	s.renderDirectory(w, token.String(), s.session.Directory().Root())
+func (s *directoryHandler) directoryRoot(w http.ResponseWriter, r *http.Request) {
+	s.renderDirectory(w, s.session.Token().String(), s.directory.Root())
 }
 
-func (s *Server) directoryPage(w http.ResponseWriter, r *http.Request) {
-	token, err := s.tokenFromRequest(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	node, ok := s.session.ResolveNode(token, share.ResourceID(r.PathValue("resource")), s.now())
+func (s *directoryHandler) directoryPage(w http.ResponseWriter, r *http.Request) {
+	node, ok := s.directory.Lookup(share.ResourceID(r.PathValue("resource")))
 	if !ok || node.Kind() != share.NodeDirectory {
 		http.NotFound(w, r)
 		return
 	}
-	s.renderDirectory(w, token.String(), node)
+	s.renderDirectory(w, s.session.Token().String(), node)
 }
 
-func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
+func (s *directoryHandler) renderDirectory(w http.ResponseWriter, token string, node *share.Node) {
 	setHTMLResponseHeaders(w, "default-src 'none'; style-src 'unsafe-inline'")
+	_ = pageTemplates.ExecuteTemplate(w, "directory.html", buildDirectoryPageData(token, node))
+}
+
+func buildDirectoryPageData(token string, node *share.Node) directoryPageData {
 	data := directoryPageData{Name: node.Name(), ArchiveURL: "/z/" + token}
 	var lineage []*share.Node
 	for current := node; current != nil; current = current.Parent() {
@@ -79,5 +66,5 @@ func (s *Server) renderDirectory(w http.ResponseWriter, token string, node *shar
 		}
 	}
 	data.IsEmpty = len(data.Directories) == 0 && len(data.Files) == 0
-	_ = directoryTemplate.ExecuteTemplate(w, "directory.html", data)
+	return data
 }

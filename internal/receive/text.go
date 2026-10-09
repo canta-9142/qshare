@@ -30,7 +30,6 @@ type TextProcessor struct {
 	cancel      context.CancelFunc
 	submissions chan textSubmission
 	done        chan struct{}
-	stopOnce    sync.Once
 	acceptMu    sync.RWMutex
 	accepting   bool
 }
@@ -84,10 +83,27 @@ func (p *TextProcessor) Submit(ctx context.Context, text share.Text) error {
 }
 
 // Shutdown stops accepting submissions and waits for accepted submissions to
-// finish processing.
-func (p *TextProcessor) Shutdown() {
-	p.stopAccepting()
-	<-p.done
+// finish processing. If ctx is canceled, Shutdown cancels processing and waits
+// for the processor to stop before returning context.Cause(ctx). This requires
+// the sink to return; cancellation cannot interrupt a blocking sink operation.
+func (p *TextProcessor) Shutdown(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		// Submit can hold acceptMu while waiting for queue space, so stopping
+		// acceptance must not prevent cancellation from reaching the worker.
+		p.stopAccepting()
+		<-p.done
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		p.Close()
+		<-done
+		return context.Cause(ctx)
+	}
 }
 
 // Close cancels processing, stops accepting submissions, and waits for the
@@ -99,12 +115,13 @@ func (p *TextProcessor) Close() {
 }
 
 func (p *TextProcessor) stopAccepting() {
-	p.stopOnce.Do(func() {
-		p.acceptMu.Lock()
+	p.acceptMu.Lock()
+	defer p.acceptMu.Unlock()
+
+	if p.accepting {
 		p.accepting = false
 		close(p.submissions)
-		p.acceptMu.Unlock()
-	})
+	}
 }
 
 func (p *TextProcessor) run(sink TextSink) {
