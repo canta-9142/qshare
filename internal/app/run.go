@@ -1,12 +1,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/canta-9142/qshare/internal/platform/clipboard"
 	"github.com/canta-9142/qshare/internal/receive"
@@ -27,8 +29,23 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	if err != nil {
 		return fmt.Errorf("failed to determine LAN advertise address: %w", err)
 	}
-	port, err := a.startLANServer(ctx, endpoint, &run, req.Port)
+	startupCtx, cancelStartup := context.WithDeadline(ctx, run.session.ExpiresAt())
+	defer cancelStartup()
+	port, err := a.prepareLANServer(startupCtx, endpoint, &run, req.Port)
+	if err == nil {
+		err = startupCtx.Err()
+	}
 	if err != nil {
+		if onlyStartupCancellation(err, startupCtx.Err()) {
+			if cause := context.Cause(ctx); cause != nil {
+				return cause
+			}
+			end = sessionExpired
+			return nil
+		}
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, startupCtx.Err()) {
+			err = errors.Join(cause, err)
+		}
 		return fmt.Errorf("failed to start server: %w", err)
 	}
 
@@ -38,11 +55,24 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 		Path:   "/s/" + run.session.Token().String(),
 	}
 	accessURL := accessURLValue.String()
-	fmt.Fprintf(a.stderr, "\nQshare\n\n%s\n\n", run.heading)
-	if err := a.renderQR(a.stderr, accessURL); err != nil {
+	var display bytes.Buffer
+	fmt.Fprintf(&display, "\nQshare\n\n%s\n\n", run.heading)
+	if err := a.renderQR(&display, accessURL); err != nil {
 		return fmt.Errorf("failed to render QR code: %w", err)
 	}
-	fmt.Fprintf(a.stderr, "\n%s\n\nThis URL expires after %s.\n\n", accessURL, req.Lifetime)
+	fmt.Fprintf(&display, "\n%s\n\nThis URL expires at %s.\n\n", accessURL, run.session.ExpiresAt().Format(time.RFC3339))
+	// Include QR generation in startup, and check validity before publishing it.
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	if !time.Now().Before(run.session.ExpiresAt()) {
+		end = sessionExpired
+		return nil
+	}
+	run.serve()
+	if _, err := display.WriteTo(a.stderr); err != nil {
+		return fmt.Errorf("failed to display session: %w", err)
+	}
 
 	var shutdownRequested <-chan struct{}
 	if a.startShutdownListener != nil {
@@ -58,6 +88,26 @@ func (a *Application) Run(ctx context.Context, req Request) (runErr error) {
 	}
 	end, runErr = run.wait(ctx, shutdownRequested)
 	return runErr
+}
+
+// onlyStartupCancellation must not discard other failures joined with cancellation.
+func onlyStartupCancellation(err, cancellation error) bool {
+	if err == nil || cancellation == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		for _, child := range children {
+			if !onlyStartupCancellation(child, cancellation) {
+				return false
+			}
+		}
+		return len(children) > 0
+	}
+	if wrapped := errors.Unwrap(err); wrapped != nil {
+		return onlyStartupCancellation(wrapped, cancellation)
+	}
+	return err == cancellation
 }
 
 // prepareSession records each acquired resource before the next fallible step.

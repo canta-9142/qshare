@@ -48,9 +48,10 @@ Owns operation orchestration:
 1. open and validate resources;
 2. configure receive and platform adapters;
 3. determine the advertised LAN address;
-4. create the session handler, reserve a LAN listener, configure its firewall
-   rule, and start a standard HTTP server;
-5. render the authenticated URL as a QR code;
+4. create the session handler, reserve a LAN listener, and configure its firewall
+   rule using a context bounded by the session expiry;
+5. prepare the QR code and URL in memory, check validity, start a standard HTTP
+   server, and display the session;
 6. wait for expiration, a signal, or a server failure;
 7. drain or stop HTTP, remove the firewall rule, finish text processing, release
    shared resources, and restore the terminal.
@@ -153,11 +154,12 @@ Each `Application.Run` owns a concrete `sessionRun` containing its acquired
 resources. Startup errors and session termination both pass through the same
 cleanup in `internal/app/lifecycle.go`. Application startup selects and reserves
 a LAN port, retaining the numeric port for the firewall rule and advertised URL.
-After firewall setup succeeds, it runs `http.Server.Serve` on that listener and
-records the result through a channel. Cleanup closes the listener even if serving
-never started, waits for serving to return, and removes the firewall rule with a
-separate five-second timeout. Cleanup errors are joined without skipping later
-resource releases.
+After firewall setup and QR generation succeed, it checks cancellation and
+expiry before running `http.Server.Serve` on that listener and displaying the
+session. It records the serving result through a channel. Cleanup closes the
+listener even if serving never started, waits for serving to return, and removes
+the firewall rule with a separate five-second timeout. Cleanup errors are joined
+without skipping later resource releases.
 
 On expiration, HTTP drains for at most 30 seconds using a context independent
 of signals, then text processing is canceled. On `q`, HTTP drains for at most
@@ -172,9 +174,34 @@ before returning and includes any error in its result.
 Reusable packages return errors instead of logging.
 
 If privileged firewall helper startup fails, qshare closes its input and sends
-SIGINT. It gives the helper at most one second to exit, including when startup is
-canceled, then attempts to kill the process without waiting indefinitely. Unexpected
-readiness responses retain helper diagnostics in the startup error.
+SIGINT. It gives the helper at most six seconds to exit, including when startup is
+canceled, allowing its five-second cleanup to finish before attempting to kill
+the process without waiting indefinitely.
+Termination by the requested SIGINT (including exit status 130) is expected.
+Other exit failures, shutdown timeouts, and kill failures are returned together
+with cancellation and helper diagnostics. Unexpected readiness responses also
+retain helper diagnostics in the startup error.
+When helper exit and cancellation are both ready, a successful shutdown retains
+the cancellation reason; a failed shutdown retains both errors and diagnostics.
+
+The privileged helper monitors parent-input EOF, SIGINT, SIGTERM, and its rule
+expiry before starting firewall commands. Those commands share a cancellable
+context; acquired leases and partial setup use independent five-second cleanup
+contexts. Cleanup failures are joined with setup failures. If an nftables rule
+handle is unavailable after insertion was attempted, flushing its owned source
+set makes the rule stop matching; failure to flush is reported as well.
+
+Firewalld rule insertion allows authentication to continue while startup is
+active. Once startup is canceled, the client has a five-second grace period to
+respond and establish ownership before it is stopped.
+After insertion returns, cancellation removes a newly added rule using another
+five-second context. A concurrent `ALREADY_ENABLED` response leaves the rule
+unowned, because firewall-cmd treats that response as a successful exit with a
+warning. Existing rules are never removed. If insertion does not respond within
+the cancellation grace period, its outcome is ambiguous: qshare reports the
+failure and relies on the rule's native
+timeout instead of deleting a rule whose ownership cannot be confirmed. See the
+[firewall-cmd contract](https://firewalld.org/documentation/man-pages/firewall-cmd.html).
 
 ## Design constraints
 

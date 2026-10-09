@@ -4,6 +4,7 @@ package firewall
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -112,5 +113,51 @@ func TestOpenNixOSNFTablesFailsClosedWithoutHandle(t *testing.T) {
 		"flush", "set", "inet", "nixos-fw", "qshare_0123456789abcdef",
 	}) {
 		t.Fatalf("cleanup call = %#v", runner.calls)
+	}
+}
+
+func TestNftablesPartialFailurePreservesCleanupErrors(t *testing.T) {
+	setupFailure := errors.New("nft setup failed")
+	cleanupFailure := errors.New("nft cleanup failed")
+	for _, stage := range []string{"source", "rule", "handle", "cancel"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			results := []commandResult{{}, {err: setupFailure}, {err: cleanupFailure}}
+			cleanupAction := "delete"
+			if stage == "rule" || stage == "handle" {
+				results = []commandResult{{}, {}, {err: setupFailure}, {err: cleanupFailure}}
+				cleanupAction = "flush"
+			}
+			if stage == "handle" {
+				results[2] = commandResult{output: `{}`}
+			}
+			runner := &fakeRunner{
+				results: results,
+				onRun: func(commandCtx context.Context, args []string) {
+					if stage == "cancel" && slices.Equal(args[:2], []string{"add", "element"}) {
+						cancel()
+					}
+					if args[0] == cleanupAction {
+						assertFirewallCleanupContext(t, commandCtx)
+					}
+				},
+			}
+			request := helperRequest{rule: testRule(), expires: time.Now().Add(time.Minute), leaseID: "0123456789abcdef"}
+			_, err := openNixOSNFTables(ctx, runner, request)
+			if !errors.Is(err, cleanupFailure) {
+				t.Fatalf("cleanup failure was lost: %v", err)
+			}
+			if stage == "cancel" {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("cancellation was lost: %v", err)
+				}
+			} else if stage != "handle" && !errors.Is(err, setupFailure) {
+				t.Fatalf("setup failure was lost: %v", err)
+			}
+			if len(runner.calls) != len(results) || runner.calls[len(results)-1].args[0] != cleanupAction {
+				t.Fatalf("unexpected cleanup commands: %v", runner.calls)
+			}
+		})
 	}
 }

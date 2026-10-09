@@ -30,6 +30,11 @@ func TestApplicationModes(t *testing.T) {
 	for _, mode := range []string{"files", "directory", "text", "receive", "clipboard", "auto fallback"} {
 		t.Run(mode, func(t *testing.T) {
 			a, listener, stderr, path := newTestApplication(t)
+			var expiresAt time.Time
+			a.openFirewall = func(ctx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+				expiresAt, _ = ctx.Deadline()
+				return firewallLeaseFunc(func(context.Context) error { return nil }), nil
+			}
 			var stdout bytes.Buffer
 			a.stdout = &stdout
 			req := Request{Paths: []string{path}, Lifetime: time.Hour}
@@ -60,9 +65,13 @@ func TestApplicationModes(t *testing.T) {
 				}
 			}
 			client := &http.Client{Timeout: 2 * time.Second}
-			qrRendered := false
-			a.renderQR = func(_ io.Writer, payload string) error {
-				qrRendered = true
+			var accessURL string
+			a.renderQR = func(dst io.Writer, payload string) error {
+				accessURL = payload
+				_, err := io.WriteString(dst, "QR code\n")
+				return err
+			}
+			checkTransfers := func(payload string) error {
 				if !strings.HasPrefix(payload, "http://192.0.2.10:55544/s/") {
 					t.Errorf("advertised URL = %q", payload)
 				}
@@ -113,8 +122,11 @@ func TestApplicationModes(t *testing.T) {
 			}
 			restored := false
 			a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
-				if !qrRendered {
+				if !strings.Contains(stderr.String(), "QR code\n") {
 					t.Error("terminal initialized before QR")
+				}
+				if err := checkTransfers(accessURL); err != nil {
+					return nil, nil, err
 				}
 				quit := make(chan struct{})
 				close(quit)
@@ -124,6 +136,9 @@ func TestApplicationModes(t *testing.T) {
 				t.Fatal(err)
 			}
 			awaitLifecycle(t, listener.closed)
+			if !strings.Contains(stderr.String(), "This URL expires at "+expiresAt.Format(time.RFC3339)+".") {
+				t.Error("display did not include the session expiry timestamp")
+			}
 			if !restored || !strings.Contains(stderr.String(), "Press q to quit.") {
 				t.Error("interactive shutdown did not restore the terminal or print the quit hint")
 			}
@@ -144,7 +159,7 @@ func TestApplicationModes(t *testing.T) {
 }
 
 func TestApplicationStartupFailures(t *testing.T) {
-	for _, stage := range []string{"paths", "session", "clipboard", "receive store", "address", "port", "listen", "firewall", "QR", "terminal", "serve"} {
+	for _, stage := range []string{"paths", "session", "clipboard", "receive store", "address", "port", "listen", "firewall", "QR", "display", "terminal", "serve"} {
 		t.Run(stage, func(t *testing.T) {
 			a, listener, _, path := newTestApplication(t)
 			want := errors.New(stage + " failed")
@@ -195,6 +210,8 @@ func TestApplicationStartupFailures(t *testing.T) {
 				a.openFirewall = func(context.Context, firewall.Rule) (firewall.Lease, error) { return nil, want }
 			case "QR":
 				a.renderQR = func(io.Writer, string) error { return want }
+			case "display":
+				a.stderr = writerFunc(func([]byte) (int, error) { return 0, want })
 			case "terminal":
 				a.startShutdownListener = func() (<-chan struct{}, func() error, error) { return nil, nil, want }
 			case "serve":
@@ -248,6 +265,164 @@ func TestApplicationExpirationAndCancellation(t *testing.T) {
 			t.Fatalf("cancellation error = %v", err)
 		}
 		awaitLifecycle(t, listener.closed)
+	}
+}
+
+func TestApplicationFirewallStartupExpirationAndCancellation(t *testing.T) {
+	for _, expired := range []bool{true, false} {
+		for _, lateSuccess := range []bool{true, false} {
+			t.Run(fmt.Sprintf("expired=%t/late success=%t", expired, lateSuccess), func(t *testing.T) {
+				a, listener, stderr, path := newTestApplication(t)
+				listener.acceptErr = errors.New("HTTP started after startup expired or was canceled")
+				ctx, cancel := context.WithCancelCause(t.Context())
+				defer cancel(nil)
+				cause := errors.New("signal during firewall setup")
+				lifetime := 50 * time.Millisecond
+				if !expired {
+					lifetime = time.Hour
+				}
+				leaseClosed := false
+				a.openFirewall = func(startupCtx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+					deadline, ok := startupCtx.Deadline()
+					if !ok || deadline.After(time.Now().Add(lifetime)) {
+						t.Fatal("firewall setup did not receive the session deadline")
+					}
+					if !expired {
+						cancel(cause)
+					}
+					select {
+					case <-startupCtx.Done():
+					case <-time.After(2 * time.Second):
+						t.Fatal("firewall setup was not canceled")
+					}
+					if !lateSuccess {
+						return nil, startupCtx.Err()
+					}
+					return firewallLeaseFunc(func(cleanupCtx context.Context) error {
+						if cleanupCtx.Err() != nil {
+							t.Errorf("firewall cleanup context: %v", cleanupCtx.Err())
+						}
+						select {
+						case <-listener.closed:
+						default:
+							t.Error("firewall removed before listener closed")
+						}
+						leaseClosed = true
+						return nil
+					}), nil
+				}
+				a.renderQR = func(io.Writer, string) error {
+					t.Error("QR rendered after startup expired or was canceled")
+					return nil
+				}
+				a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+					t.Error("terminal initialized after startup expired or was canceled")
+					return nil, nil, nil
+				}
+				err := a.Run(ctx, Request{Paths: []string{path}, Lifetime: lifetime})
+				if (expired && err != nil) || (!expired && !errors.Is(err, cause)) {
+					t.Fatalf("Run() error = %v, expired=%t", err, expired)
+				}
+				awaitLifecycle(t, listener.closed)
+				if leaseClosed != lateSuccess || stderr.Len() != 0 {
+					t.Fatalf("lease closed=%t, stderr=%q", leaseClosed, stderr)
+				}
+			})
+		}
+	}
+}
+
+func TestApplicationStartupCancellationErrors(t *testing.T) {
+	failure := errors.New("helper cleanup failed")
+	for _, expired := range []bool{true, false} {
+		for _, tc := range []struct {
+			name string
+			err  func(error) error
+		}{
+			{"wrapped", func(err error) error { return fmt.Errorf("wait for helper: %w", err) }},
+			{"joined cancellation", func(err error) error { return errors.Join(err, fmt.Errorf("wait: %w", err)) }},
+			{"joined failure", func(err error) error { return fmt.Errorf("helper: %w", errors.Join(err, failure)) }},
+		} {
+			t.Run(fmt.Sprintf("expired=%t/%s", expired, tc.name), func(t *testing.T) {
+				a, listener, stderr, path := newTestApplication(t)
+				ctx, cancel := context.WithCancelCause(t.Context())
+				defer cancel(nil)
+				cause := errors.New("signal during startup")
+				lifetime := 10 * time.Millisecond
+				if !expired {
+					lifetime = time.Hour
+				}
+				a.openFirewall = func(startupCtx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+					if !expired {
+						cancel(cause)
+					}
+					awaitLifecycle(t, startupCtx.Done())
+					return nil, tc.err(startupCtx.Err())
+				}
+				err := a.Run(ctx, Request{Paths: []string{path}, Lifetime: lifetime})
+				if tc.name == "joined failure" {
+					if !errors.Is(err, failure) {
+						t.Fatalf("startup failure was lost: %v", err)
+					}
+				} else if expired && err != nil {
+					t.Fatalf("expiration error = %v", err)
+				}
+				if !expired && !errors.Is(err, cause) {
+					t.Fatalf("cancellation cause was lost: %v", err)
+				}
+				awaitLifecycle(t, listener.closed)
+				if stderr.Len() != 0 {
+					t.Fatalf("session displayed after startup failure: %q", stderr)
+				}
+			})
+		}
+	}
+}
+
+func TestApplicationExpirationAndCancellationDuringQRGeneration(t *testing.T) {
+	for _, expired := range []bool{true, false} {
+		t.Run(fmt.Sprintf("expired=%t", expired), func(t *testing.T) {
+			a, listener, stderr, path := newTestApplication(t)
+			listener.acceptErr = errors.New("HTTP started before QR generation finished")
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			cause := errors.New("signal during QR generation")
+			lifetime := 50 * time.Millisecond
+			if !expired {
+				lifetime = time.Hour
+			}
+			var startupCtx context.Context
+			leaseClosed := false
+			a.openFirewall = func(ctx context.Context, _ firewall.Rule) (firewall.Lease, error) {
+				startupCtx = ctx
+				return firewallLeaseFunc(func(ctx context.Context) error {
+					leaseClosed = true
+					return ctx.Err()
+				}), nil
+			}
+			a.renderQR = func(dst io.Writer, _ string) error {
+				if _, err := io.WriteString(dst, "QR code\n"); err != nil {
+					return err
+				}
+				if !expired {
+					cancel(cause)
+				}
+				awaitLifecycle(t, startupCtx.Done())
+				return nil
+			}
+			a.startShutdownListener = func() (<-chan struct{}, func() error, error) {
+				t.Error("terminal initialized after QR generation expired or was canceled")
+				return nil, nil, nil
+			}
+			err := a.Run(ctx, Request{Paths: []string{path}, Lifetime: lifetime})
+			if (expired && err != nil) || (!expired && !errors.Is(err, cause)) {
+				t.Fatalf("Run() error = %v, expired=%t", err, expired)
+			}
+			awaitLifecycle(t, listener.closed)
+			if !leaseClosed || stderr.Len() != 0 {
+				t.Fatalf("lease closed=%t, stderr=%q", leaseClosed, stderr)
+			}
+		})
 	}
 }
 
@@ -439,6 +614,10 @@ type firewallLeaseFunc func(context.Context) error
 
 func (f firewallLeaseFunc) Close(ctx context.Context) error { return f(ctx) }
 
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
 type textSinkFunc func(context.Context, share.Text) error
 
 func (f textSinkFunc) WriteText(ctx context.Context, text share.Text) error { return f(ctx, text) }
@@ -479,7 +658,10 @@ func TestApplicationRequestedPort(t *testing.T) {
 				firewallPort = rule.Port
 				return lease, nil
 			}
-			err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Millisecond, Port: 8080})
+			quit := make(chan struct{})
+			close(quit)
+			application.startShutdownListener = func() (<-chan struct{}, func() error, error) { return quit, nil, nil }
+			err := application.Run(context.Background(), Request{Paths: []string{path}, Lifetime: time.Hour, Port: 8080})
 			if len(addresses) != 1 || addresses[0] != "192.0.2.10:8080" {
 				t.Fatalf("Start addresses = %v", addresses)
 			}

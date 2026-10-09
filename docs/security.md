@@ -133,6 +133,17 @@ limited to the selected interface, source subnet, destination address, and
 port. HTTPS, Direct Mode, captive portals, and automatic hotspot cleanup are
 not part of the current implementation.
 
+Firewall cancellation must preserve ownership boundaries. Firewalld insertions
+allow authentication while startup is active, then receive a five-second grace
+period after cancellation to report ownership before cleanup. Preexisting or
+concurrently added rules are left untouched. An insertion whose
+result cannot be confirmed is reported as a failure and retains its native
+expiry as a fallback. NixOS helper commands are canceled on parent EOF, signals,
+or expiry, and partial cleanup has an independent five-second limit. Cleanup
+failures are reported alongside the original error. If an nftables insertion
+does not provide a usable handle, its owned source set is emptied to stop the
+rule matching; empty objects may remain until manual cleanup.
+
 ## Verification
 
 Security-sensitive pure logic requires unit tests. HTTP tests should cover

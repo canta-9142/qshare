@@ -72,6 +72,21 @@ prints a QR code and authenticated URL, then runs until the session expires,
 receives a termination signal, the user presses `q`, or it encounters a fatal
 server error. A completed transfer does not end the session.
 
+The session lifetime includes firewall setup and any authentication wait.
+QR generation also counts toward that lifetime. qshare prepares the display in
+memory and checks validity before starting HTTP and writing it to stderr. If
+startup expires, it releases acquired resources and exits normally without
+displaying a QR code or URL. Cleanup failures still produce exit code `1`, even
+when returned together with cancellation. The display shows the actual expiry
+timestamp, including its time-zone offset. A blocked stderr write can finish
+after expiration; the check does not cancel the write itself.
+
+Firewalld authentication may wait until the session expires or receives a signal.
+During rule insertion, expiration or a signal waits up to five more seconds
+for the insertion result to establish ownership, followed by up to five seconds
+to remove an owned rule. An insertion timeout is a runtime failure because its
+result cannot be confirmed; the rule's native expiry remains the fallback.
+
 When stdin is a terminal, qshare switches it to non-canonical, no-echo input
 only after the server and firewall are ready and the QR code has been rendered.
 It then prints `Press q to quit.` to stderr. Pressing `q` does not require Enter.

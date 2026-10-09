@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // commandResult captures the relevant outcome of an external command.
@@ -114,16 +115,34 @@ func (f *firewalld) tryOpen(ctx context.Context, rule Rule) (Lease, bool, error)
 	}
 
 	seconds := timeoutSeconds(rule.Timeout)
+	if err := ctx.Err(); err != nil {
+		return nil, true, err
+	}
+	// Allow authentication until startup is canceled, then give the mutation
+	// a bounded grace period to report ownership before stopping the client.
+	addCtx, cancelAdd := context.WithCancelCause(context.WithoutCancel(ctx))
+	stopGrace := context.AfterFunc(ctx, func() {
+		timer := time.NewTimer(helperCleanupTimeout)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			cancelAdd(context.DeadlineExceeded)
+		case <-addCtx.Done():
+		}
+	})
 	result := f.runner.run(
-		ctx,
+		addCtx,
 		executable,
 		"--zone="+zone,
 		"--add-rich-rule="+richRule,
 		"--timeout="+strconv.FormatInt(seconds, 10)+"s",
 	)
+	addErr := context.Cause(addCtx)
+	stopGrace()
+	cancelAdd(nil)
 	if result.err != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, true, err
+		if ctx.Err() != nil || addErr != nil {
+			return nil, true, errors.Join(ctx.Err(), addErr, commandError("add temporary firewalld rule", result))
 		}
 
 		// Another process may have installed the same rule between the query
@@ -136,12 +155,20 @@ func (f *firewalld) tryOpen(ctx context.Context, rule Rule) (Lease, bool, error)
 		return nil, true, commandError("add temporary firewalld rule", result)
 	}
 
-	return &firewalldLease{
+	lease := &firewalldLease{
 		manager: f,
 		zone:    zone,
 		rule:    richRule,
-		owned:   true,
-	}, true, nil
+		// ALREADY_ENABLED is reported as a successful exit with a warning.
+		// That rule belongs to the process that added it first.
+		owned: !strings.Contains(result.output, "ALREADY_ENABLED"),
+	}
+	if err := ctx.Err(); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), helperCleanupTimeout)
+		defer cancel()
+		return nil, true, errors.Join(err, lease.Close(cleanupCtx))
+	}
+	return lease, true, nil
 }
 
 // zoneForInterface resolves an interface zone or falls back to the default zone.
@@ -160,6 +187,9 @@ func (f *firewalld) zoneForInterface(ctx context.Context, executable, iface stri
 
 	result = f.runner.run(ctx, executable, "--get-default-zone")
 	if result.err != nil {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		return "", commandError("determine default firewalld zone", result)
 	}
 	if result.output == "" {
@@ -238,4 +268,12 @@ func commandError(operation string, result commandResult) error {
 		return fmt.Errorf("%s: %w", operation, result.err)
 	}
 	return fmt.Errorf("%s: %w: %s", operation, result.err, result.output)
+}
+
+// firewallSetupError preserves cancellation when an external command is stopped.
+func firewallSetupError(ctx context.Context, operation string, result commandResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return commandError(operation, result)
 }

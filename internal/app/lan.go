@@ -69,7 +69,9 @@ func (a *Application) listenLAN(endpoint network.Endpoint, requestedPort uint16)
 	)
 }
 
-func (a *Application) startLANServer(ctx context.Context, endpoint network.Endpoint, run *sessionRun, requestedPort uint16) (uint16, error) {
+// prepareLANServer reserves the listener and configures its firewall rule.
+// Run starts serving only after QR generation and the startup validity check.
+func (a *Application) prepareLANServer(ctx context.Context, endpoint network.Endpoint, run *sessionRun, requestedPort uint16) (uint16, error) {
 	listener, port, err := a.listenLAN(endpoint, requestedPort)
 	if err != nil {
 		return 0, err
@@ -86,6 +88,5 @@ func (a *Application) startLANServer(ctx context.Context, endpoint network.Endpo
 		return 0, fmt.Errorf("failed to configure firewall: %w", err)
 	}
 
-	run.serve()
 	return port, nil
 }

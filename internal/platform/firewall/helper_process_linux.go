@@ -117,10 +117,20 @@ func (l *processHelperLauncher) start(
 		return &processLease{stdin: stdin, done: done, stderr: stderr}, nil
 
 	case err := <-done:
+		_ = stdin.Close()
+		if cancellation := ctx.Err(); cancellation != nil {
+			err = helperShutdownError(err)
+			if err == nil {
+				return nil, cancellation
+			}
+			err = errors.Join(cancellation, err)
+		}
 		return nil, helperProcessError("firewall helper exited before becoming ready", err, stderr.String())
 
 	case <-ctx.Done():
-		_ = stopStartingHelper(cmd, stdin, done)
+		if err := stopStartingHelper(cmd, stdin, done); err != nil {
+			return nil, helperProcessError("stop canceled firewall helper", errors.Join(ctx.Err(), err), stderr.String())
+		}
 		return nil, ctx.Err()
 	}
 }
@@ -129,17 +139,30 @@ func (l *processHelperLauncher) start(
 func stopStartingHelper(cmd *exec.Cmd, stdin io.Closer, done <-chan error) error {
 	_ = stdin.Close()
 	_ = cmd.Process.Signal(os.Interrupt)
-	timer := time.NewTimer(time.Second)
+	// Allow the helper's bounded cleanup to finish before forcing termination.
+	timer := time.NewTimer(helperCleanupTimeout + time.Second)
 	defer timer.Stop()
 	var err error
 	select {
 	case err = <-done:
-		return err
+		return helperShutdownError(err)
 	case <-timer.C:
 		err = errors.New("firewall helper shutdown timed out")
 	}
 	if killErr := cmd.Process.Kill(); killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
 		err = errors.Join(err, fmt.Errorf("kill firewall helper: %w", killErr))
+	}
+	return err
+}
+
+// helperShutdownError ignores conventional SIGINT results during cancellation.
+func helperShutdownError(err error) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		status, _ := exitErr.Sys().(syscall.WaitStatus)
+		if (status.Signaled() && status.Signal() == syscall.SIGINT) || exitErr.ExitCode() == 128+int(syscall.SIGINT) {
+			return nil
+		}
 	}
 	return err
 }

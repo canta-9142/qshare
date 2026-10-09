@@ -29,6 +29,11 @@ Every operation creates a temporary session with a cryptographically secure
 256-bit token. The QR code and displayed URL contain that token.
 
 - The default lifetime is 10 minutes and `--expire` may change it.
+- The lifetime starts when the session is created, including firewall setup.
+  QR generation also counts toward the lifetime. Expiration cancels setup;
+  validity is checked before HTTP starts and the QR code and URL are written.
+  If that check finds expiration, acquired resources are released without
+  displaying the session. The display includes the actual expiry timestamp.
 - Downloads and submissions do not end a session.
 - Expiration stops new requests and gives active requests up to 30 seconds to
   finish before they are closed.
